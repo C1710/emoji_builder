@@ -1,0 +1,9 @@
+[package]
+name = "svgrenderer"
+version = "0.1.0"
+authors = ["Constantin A. <10349490+C1710@users.noreply.github.com>"]
+
+
+[dependencies]
+resvg = "0.6.1"
+oxipng = "2.2.0"
