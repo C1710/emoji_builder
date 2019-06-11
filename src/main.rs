@@ -14,24 +14,15 @@
  * limitations under the License.
  */
 
-extern crate core;
-extern crate emoji_builder;
-extern crate itertools;
-extern crate regex;
-extern crate threadpool;
-
-use core::borrow::Borrow;
 use std::env::args;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::mpsc::channel;
+use std::fs::DirEntry;
+use std::path::PathBuf;
 
-use itertools::enumerate;
-use threadpool::ThreadPool;
+use rayon::prelude::*;
 
 use emoji_builder::emoji::Emoji;
-use emoji_builder::unicode_tables;
+use emoji_builder::emoji_tables;
 
 fn main() {
     let mut args = args();
@@ -44,11 +35,11 @@ fn main() {
     };
 
     let table = match table_paths {
-        Some(table_paths) => Some(unicode_tables::build_table(&table_paths)),
+        Some(table_paths) => Some(emoji_tables::build_table(&table_paths)),
         None => None
     };
     let table = match table {
-        Some(Ok(table)) => Some(Arc::new(table)),
+        Some(Ok(table)) => Some(table),
         Some(Err(_)) => None,
         None => None
     };
@@ -57,41 +48,22 @@ fn main() {
     if table.is_some() {
         println!("Using unicode table");
     }
-    let workers = 8;
-    let pool = ThreadPool::new(workers);
 
-    let (tx, rx) = channel();
+    //let (tx, rx) = channel();
     let paths = fs::read_dir(path).unwrap();
-    let mut size = 0;
 
-    for path in paths {
-        size += 1;
-        let tx = tx.clone();
-        let table = table.clone();
-        pool.execute(move || {
-            if let Ok(path) = path {
-                let path = path.path();
-                let path = path.as_path();
-                if let Some(ext) = path.extension() {
-                    if ext == "svg" {
-                        let emoji = Emoji::from_file(path, table, false);
-                        tx.send(emoji).unwrap_or_default();
-                        return;
-                    }
-                }
-            }
-            tx.send(None);
+    let paths: Vec<_> = paths.collect();
+
+    let _emojis: Vec<_> = paths.par_iter()
+        .filter(|path| path.is_ok())
+        .map(|path: &Result<DirEntry, _>| match path {
+            Ok(path) => path,
+            Err(_) => unreachable!()
         })
-    }
-    for result in rx {
-        if let Some(emoji) = result {
-            println!("{:?}", emoji);
-        };
-        size -= 1;
-        if size == 0 {
-            break;
-        }
-    }
+        .map(std::fs::DirEntry::path)
+        .filter(|path| path.extension().is_some() && path.extension().unwrap() == "svg")
+        .map(|path| Emoji::from_file(path, &table, false))
+        .collect();
 }
 
 

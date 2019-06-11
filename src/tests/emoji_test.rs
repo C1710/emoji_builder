@@ -17,11 +17,10 @@
 use std::collections::HashSet;
 use std::fs;
 use std::iter::FromIterator;
-use std::sync::Arc;
 
-use emoji::{Emoji, EmojiKind};
-use emoji::EmojiKind::EmojiZwjSequence;
-use unicode_tables;
+use crate::emoji::Emoji;
+use crate::emoji::EmojiKind::EmojiZwjSequence;
+use crate::emoji_tables;
 
 const SVG_PATH: &str = "test_files/svg";
 const TABLES_PATH: &str = "test_files/unicode";
@@ -44,26 +43,21 @@ fn emoji_build() {
 
     assert_eq!(table_paths.len(), TABLES);
 
-    let table = unicode_tables::build_table(&table_paths).unwrap();
+    let table = emoji_tables::build_table(&table_paths).unwrap();
 
     assert_eq!(table.len(), TABLE_ENTRIES);
 
-    let table = Arc::new(table);
+    //let table = Arc::new(table);
+    let table = Some(table);
 
-    let emoji_paths: Vec<_> = fs::read_dir(SVG_PATH).expect("Couldn't read the svg directory")
+    let emojis: HashSet<_> = fs::read_dir(SVG_PATH).expect("Couldn't read the svg directory")
         .filter(std::result::Result::is_ok)
         .map(std::result::Result::unwrap)
         .map(|entry| entry.path())
         .filter(|entry| entry.extension().is_some())
         .filter(|entry| entry.extension().unwrap() == "svg")
+        .map(|path| Emoji::from_file(path, &table, false).unwrap())
         .collect();
-
-    let mut emojis = HashSet::new();
-    for path in emoji_paths {
-        let path = path.as_path();
-        let emoji = Emoji::from_file(path, Some(table.clone()), false).unwrap();
-        emojis.insert(emoji);
-    };
 
     assert_eq!(emojis.len(), EMOJIS);
 

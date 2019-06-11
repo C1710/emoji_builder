@@ -14,20 +14,12 @@
  * limitations under the License.
  */
 
-extern crate csv;
-extern crate hex;
-extern crate itertools;
 #[macro_use]
 extern crate lazy_static;
-extern crate oxipng;
-extern crate regex;
-extern crate resvg;
-extern crate sha2;
-extern crate test;
 
 
 pub mod emoji;
-pub mod unicode_tables;
+pub mod emoji_tables;
 pub mod builder;
 pub mod builders;
 pub mod changes;

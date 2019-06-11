@@ -13,15 +13,75 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+//! This is the main module for the actual emoji processing.
 
+use std::fs::create_dir;
 use std::path::Path;
 
-use emoji::Emoji;
+use crate::builder::ResetError::IoError;
+use crate::emoji::Emoji;
 
-pub trait FontBuilder {
+/// A trait that allows custom build routines for emoji sets.
+///
+/// Usually an `EmojiBuilder` will build an emoji font in one (or more) specific format(s), but
+/// it might be used in other contexts as well.
+pub trait EmojiBuilder {
     type Err;
+
+    /// Instantiates a new `EmojiBuilder` before using it.
+    /// This will set up different settings and specify the workinf directories for the builder.
     fn new(build_dir: &Path, output_dir: &Path) -> Result<Box<Self>, Self::Err>;
 
+    /// Called when the builder is supposed to stop its work.
+    ///
+    /// The difference to the `Drop` trait is that
+    /// this might be called before the builder is dropped and an error may be returned.
+    fn finish(&self) -> Result<(), Self::Err> { Ok(()) }
+
+    /// Lets the builder reset a build directory so that it can be reused by that builder just like
+    /// it would if an empty directory was used.
+    ///
+    /// This reset might be done in a way that retains default files.
+    /// The default implementation deletes the whole directory and recreates it by a new one
+    fn reset(&self, build_dir: &Path) -> Result<(), ResetError<Self::Err>> {
+        let parent = build_dir.parent();
+        match parent {
+            None => Err(ResetError::NoParentError),
+            Some(_) => {
+                match remove_dir_all::remove_dir_all(build_dir) {
+                    Err(err) => Err(err.into()),
+                    Ok(_) => {
+                        match create_dir(build_dir) {
+                            Err(err) => Err(err.into()),
+                            Ok(_) => Ok(())
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Preprocess a single emoji which will be later used to create the emoji set.
+    ///
+    /// This function needs to be thread-safe as the preparation might be done in parallel/concurrency.
     fn prepare(&mut self, emoji: &Emoji) -> Result<(), Self::Err>;
-    fn build(&mut self) -> Result<(), Self::Err>;
+
+    /// Builds the emoji set with the given emojis.
+    ///
+    /// Calling this function has to be performed _after_ calling `prepare` for all `Emoji`s in
+    /// `emojis`.
+    fn build<I>(&mut self, emojis: I) -> Result<(), Self::Err>
+        where I: IntoIterator<Item=Emoji>;
+}
+
+pub enum ResetError<T> {
+    IoError(std::io::Error),
+    BuilderError(T),
+    NoParentError,
+}
+
+impl<T> From<std::io::Error> for ResetError<T> {
+    fn from(e: std::io::Error) -> Self {
+        IoError(e)
+    }
 }

@@ -13,27 +13,34 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+//! A simple hash-based implementation to track changes of the emoji's SVG files.
+//!
+//! It is mostly intended for the different `EmojiBuilder`s that shouldn't do heavy rendering tasks
+//! twice for the exact same file.
 
 use std::{fs, io};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use csv::Error;
 use hex::FromHexError;
-use itertools::Itertools;
 use sha2::{Digest, Sha256};
 
-use changes::CheckError::{IO, NoFileSpecified};
-use emoji::Emoji;
+use crate::changes::CheckError::{IO, NoFileSpecified};
+use crate::emoji::Emoji;
 
+/// A simple struct that maps code sequences to file hashes
 pub struct FileHashes(HashMap<Vec<u32>, Vec<u8>>);
 
 pub enum CheckError {
+    /// An error that happened in the IO part
     IO(std::io::Error),
+    /// This error indicates that the given `Emoji` doesn't carry a path for its SVG file
     NoFileSpecified,
 }
 
 impl FileHashes {
+    /// Parses an CSV file to a `FileHashes` table
     pub fn from_path(path: &Path) -> Result<FileHashes, Error> {
         let mut reader = csv::Reader::from_path(path)?;
         let records = reader.records();
@@ -51,11 +58,11 @@ impl FileHashes {
         Ok(FileHashes(table))
     }
 
-    /// Checks whether the hash of the file is still the same as the one given in the table
+    /// Checks whether the hash of the file is still the same as the one in the table
     pub fn check(&self, emoji: &Emoji) -> Result<bool, CheckError> {
         if let Some(path) = &emoji.svg_path {
             let mut hasher = Sha256::new();
-            let mut file = fs::File::open(path);
+            let file = fs::File::open(path);
             let hash = self.0.get(&emoji.sequence);
             if let Some(hash) = hash {
                 match file {
@@ -80,10 +87,11 @@ impl FileHashes {
         }
     }
 
+    /// Replaces (or inserts) the hash for a given `Emoji`
     pub fn update(&mut self, emoji: &Emoji) -> Result<Option<Vec<u8>>, CheckError> {
         if let Some(path) = &emoji.svg_path {
             let mut hasher = Sha256::new();
-            let mut file = fs::File::open(path);
+            let file = fs::File::open(path);
             match file {
                 Ok(mut file) => {
                     match io::copy(&mut file, &mut hasher) {
@@ -103,18 +111,20 @@ impl FileHashes {
         }
     }
 
-    pub fn write(self, path: &str) -> Result<(), Error> {
+    /// Saves the table to a CSV file.
+    /// **Warning**: Any existing file with that name will be overwritten.
+    pub fn write(self, path: PathBuf) -> Result<(), Error> {
         let mut writer = csv::Writer::from_path(path)?;
         for entry in self.0 {
             let sequence = entry.0.iter();
-            let mut sequence: Vec<String> = sequence
+            let sequence: Vec<String> = sequence
                 .map(|codepoint| format!("{:x}", codepoint))
                 .collect();
             let sequence = sequence.join(" ");
             let hash = hex::encode(entry.1);
-            writer.write_record(vec![sequence, hash]);
+            writer.write_record(vec![sequence, hash])?;
         }
-        writer.flush();
+        writer.flush()?;
         Ok(())
     }
 }

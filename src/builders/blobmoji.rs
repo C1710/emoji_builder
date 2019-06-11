@@ -13,6 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+//! The _Blobmoji_ build routine is capable of creating CBDT/CBLC emoji fonts as
+//! well as ones that can be used in the [EmojiCompat-Library][emojiCompat] (e.g. with a
+//! [file-based][filemojicompat] implementation) on Android.
+//!
+//! The exact emoji set that this is written for is [Blobmoji][blob], a fork of
+//! [Noto Emoji][noto] with a continued support of the Blob emojis.
+//!
+//! [emojiCompat]: https://developer.android.com/guide/topics/ui/look-and-feel/emoji-compat
+//! [blob]: https://github.com/c1710/blobmoji
+//! [noto]: https://github.com/googlefonts/noto-emoji
+//! [filemojicompat]: https://github.com/c1710/filemojicompat
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -24,10 +35,11 @@ use resvg::backend_raqote;
 use resvg::FitTo;
 use resvg::prelude::*;
 
-use builder::FontBuilder;
-use changes::FileHashes;
-use emoji::Emoji;
+use crate::builder::EmojiBuilder;
+use crate::changes::FileHashes;
+use crate::emoji::Emoji;
 
+#[allow(dead_code)]
 struct Blobmoji {
     build_path: Box<Path>,
     output_path: Box<Path>,
@@ -38,7 +50,7 @@ struct Blobmoji {
 
 const HASHES: &str = "hashes.csv";
 
-impl FontBuilder for Blobmoji {
+impl EmojiBuilder for Blobmoji {
     type Err = ();
 
     fn new(build_path: &Path, output_path: &Path) -> Result<Box<Self>, Self::Err> {
@@ -73,7 +85,8 @@ impl FontBuilder for Blobmoji {
         Err(())
     }
 
-    fn build(&mut self) -> Result<(), Self::Err> {
+    fn build<I>(&mut self, emojis: I) -> Result<(), Self::Err>
+        where I: IntoIterator<Item=Emoji> {
         unimplemented!()
     }
 }
