@@ -26,7 +26,7 @@ use csv::Error;
 use hex::FromHexError;
 use sha2::{Digest, Sha256};
 
-use crate::changes::CheckError::{IO, NoFileSpecified};
+use crate::changes::CheckError::{Io, NoFileSpecified};
 use crate::emoji::Emoji;
 
 /// A simple struct that maps code sequences to file hashes
@@ -34,7 +34,7 @@ pub struct FileHashes(HashMap<Vec<u32>, Vec<u8>>);
 
 pub enum CheckError {
     /// An error that happened in the IO part
-    IO(std::io::Error),
+    Io(std::io::Error),
     /// This error indicates that the given `Emoji` doesn't carry a path for its SVG file
     NoFileSpecified,
 }
@@ -73,10 +73,10 @@ impl FileHashes {
                                 let result = result.as_slice();
                                 Ok(*hash == result)
                             }
-                            Err(error) => Err(IO(error))
+                            Err(error) => Err(Io(error))
                         }
                     }
-                    Err(error) => Err(IO(error))
+                    Err(error) => Err(Io(error))
                 }
             } else {
                 // If there is no entry, the hash can be assumed as different
@@ -101,10 +101,10 @@ impl FileHashes {
 
                             Ok(self.0.insert(emoji.sequence.clone(), Vec::from(result)))
                         }
-                        Err(error) => Err(IO(error))
+                        Err(error) => Err(Io(error))
                     }
                 }
-                Err(error) => Err(IO(error))
+                Err(error) => Err(Io(error))
             }
         } else {
             Err(NoFileSpecified)

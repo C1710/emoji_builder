@@ -26,9 +26,9 @@
 //! [filemojicompat]: https://github.com/c1710/filemojicompat
 
 use std::collections::HashMap;
-use std::path::Path;
 use std::path::PathBuf;
 
+use clap::{App, ArgMatches, SubCommand};
 use oxipng::{optimize_from_memory, PngResult};
 use oxipng::internal_tests::Headers::Safe;
 use resvg::backend_raqote;
@@ -41,11 +41,11 @@ use crate::emoji::Emoji;
 
 #[allow(dead_code)]
 struct Blobmoji {
-    build_path: Box<Path>,
-    output_path: Box<Path>,
+    build_path: PathBuf,
     name: Option<String>,
     images: HashMap<Vec<u32>, Option<Vec<u8>>>,
     hashes: FileHashes,
+    verbose: bool
 }
 
 const HASHES: &str = "hashes.csv";
@@ -53,14 +53,14 @@ const HASHES: &str = "hashes.csv";
 impl EmojiBuilder for Blobmoji {
     type Err = ();
 
-    fn new(build_path: &Path, output_path: &Path) -> Result<Box<Self>, Self::Err> {
-        let hash_path = build_path.join(String::from(HASHES)).clone();
+    fn new(build_path: PathBuf, verbose: bool, _arguments: &ArgMatches) -> Result<Box<Self>, Self::Err> {
+        let hash_path = build_path.join(String::from(HASHES));
         let builder = Box::new(Blobmoji {
-            build_path: build_path.into(),
-            output_path: output_path.into(),
+            build_path: build_path,
             name: None,
             images: HashMap::new(),
             hashes: FileHashes::from_path(hash_path.as_path()).unwrap_or_default(),
+            verbose
         });
         Ok(builder)
     }
@@ -85,9 +85,13 @@ impl EmojiBuilder for Blobmoji {
         Err(())
     }
 
-    fn build<I>(&mut self, emojis: I) -> Result<(), Self::Err>
+    fn build<I>(&mut self, emojis: I, output_file: PathBuf) -> Result<(), Self::Err>
         where I: IntoIterator<Item=Emoji> {
         unimplemented!()
+    }
+
+    fn sub_command<'a, 'b>() -> App<'a, 'b> {
+        SubCommand::with_name("blobmoji")
     }
 }
 

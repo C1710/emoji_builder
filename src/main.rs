@@ -14,28 +14,35 @@
  * limitations under the License.
  */
 
-use std::env::args;
+
+#[macro_use]
+extern crate clap;
+
 use std::fs;
 use std::fs::DirEntry;
 use std::path::PathBuf;
 
+use clap::{App, ArgMatches, SubCommand};
 use rayon::prelude::*;
 
 use emoji_builder::emoji::Emoji;
 use emoji_builder::emoji_tables;
 
 fn main() {
-    let mut args = args();
-    args.next();
-    let path = args.next().expect("You need to specify a path");
-    let table_paths: Vec<_> = args.map(PathBuf::from).collect();
-    let table_paths = match table_paths.len() {
-        0 => None,
-        _ => Some(table_paths)
-    };
+    let args = parse_args();
+    let matches = args.1;
+    let args = args.0;
+    let table_paths = args.tables_path;
 
     let table = match table_paths {
-        Some(table_paths) => Some(emoji_tables::build_table(&table_paths)),
+        Some(table_paths) => {
+            let table_paths: Vec<_> = table_paths.read_dir().unwrap()
+                .filter(|entry| entry.is_ok())
+                .map(|entry| entry.unwrap())
+                .map(|entry| entry.path())
+                .collect();
+            Some(emoji_tables::build_table(&table_paths))
+        },
         None => None
     };
     let table = match table {
@@ -49,21 +56,73 @@ fn main() {
         println!("Using unicode table");
     }
 
-    //let (tx, rx) = channel();
-    let paths = fs::read_dir(path).unwrap();
+    let images = args.svg_path;
 
-    let paths: Vec<_> = paths.collect();
+    let paths: Vec<_> = fs::read_dir(images).unwrap().collect();
 
-    let _emojis: Vec<_> = paths.par_iter()
+    let emojis: Vec<Emoji> = paths.par_iter()
         .filter(|path| path.is_ok())
         .map(|path: &Result<DirEntry, _>| match path {
             Ok(path) => path,
             Err(_) => unreachable!()
         })
         .map(std::fs::DirEntry::path)
-        .filter(|path| path.extension().is_some() && path.extension().unwrap() == "svg")
+        .filter(|path| path.is_file())
         .map(|path| Emoji::from_file(path, &table, false))
+        .filter(std::result::Result::is_ok)
+        .map(std::result::Result::unwrap)
         .collect();
+
+    if args.verbose {
+        for emoji in emojis {
+            println!("{:?}", emoji);
+        }
+    }
+}
+
+struct BuilderArguments {
+    svg_path: PathBuf,
+    flag_path: Option<PathBuf>,
+    tables_path: Option<PathBuf>,
+    build_path: PathBuf,
+    output_path: PathBuf,
+    verbose: bool,
+}
+
+fn parse_args<'a>() -> (BuilderArguments, ArgMatches<'a>) {
+    let yaml = load_yaml!("cli.yaml");
+    let matches = App::from_yaml(yaml)
+        .version(crate_version!())
+        .get_matches();
+
+    let verbose = matches.is_present("verbose");
+    let images: PathBuf = matches.value_of("images").unwrap().into();
+    let flags = matches.value_of("flags");
+    let tables = matches.value_of("tables");
+    let build: PathBuf = matches.value_of("build").unwrap().into();
+
+    let output = matches.value_of("output").unwrap();
+    let output_dir = matches.value_of("output_dir").unwrap();
+    let output_path = PathBuf::from(output_dir).join(PathBuf::from(output));
+
+    let flags = match flags {
+        Some(flags) => Some(PathBuf::from(flags)),
+        None => None
+    };
+
+    let tables = match tables {
+        Some(tables) => Some(PathBuf::from(tables)),
+        None => None
+    };
+
+    (BuilderArguments {
+        svg_path: images,
+        flag_path: flags,
+        tables_path: tables,
+        build_path: build,
+        output_path,
+        verbose,
+    }, matches)
 }
 
 
