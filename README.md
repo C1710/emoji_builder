@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.com/C1710/emoji_builder.svg?token=Mr9kkSveUkaSSi3GNLyz&branch=dev)](https://travis-ci.com/C1710/emoji_builder)
+
 # Emoji Builder
 _Currently under development_.
  
