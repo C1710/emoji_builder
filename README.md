@@ -1,6 +1,6 @@
 # Emoji Builder
 _Currently under development_.
-
+ 
 ## License
     Copyright 2019 Constantin A. <emoji.builder@c1710.de>
 
