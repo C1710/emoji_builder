@@ -26,11 +26,10 @@ use rayon::prelude::*;
 
 use emoji_builder::emoji::Emoji;
 use emoji_builder::emoji_tables;
+use emoji_builder::emoji_tables::EmojiTable;
 
 fn main() {
     let args = parse_args();
-    let matches = args.1;
-    let args = args.0;
 
     let table_paths = args.tables_path;
 
@@ -43,7 +42,7 @@ fn main() {
                 .map(|entry| entry.unwrap())
                 .map(|entry| entry.path())
                 .collect();
-            Some(emoji_tables::build_table(&table_paths))
+            Some(EmojiTable::from_files(&table_paths))
         }
         None => None,
     };
@@ -91,9 +90,10 @@ struct BuilderArguments {
     verbose: bool,
 }
 
-fn parse_args<'a>() -> (BuilderArguments, ArgMatches<'a>) {
+fn parse_args() -> BuilderArguments {
     let yaml = load_yaml!("cli.yaml");
-    let matches: ArgMatches<'a> = App::from_yaml(yaml).version(crate_version!()).get_matches();
+    let matches: ArgMatches = App::from_yaml(yaml)
+        .version(crate_version!()).get_matches();
 
     let verbose = matches.is_present("verbose");
     let images: PathBuf = matches.value_of("images").unwrap().into();
@@ -115,15 +115,12 @@ fn parse_args<'a>() -> (BuilderArguments, ArgMatches<'a>) {
         None => None,
     };
 
-    (
-        BuilderArguments {
+    BuilderArguments {
             svg_path: images,
             flag_path: flags,
             tables_path: tables,
             build_path: build,
             output_path,
             verbose,
-        },
-        matches,
-    )
+    }
 }

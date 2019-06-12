@@ -81,8 +81,9 @@ impl Emoji {
     /// ```
     /// use emoji_builder::emoji::{Emoji, EmojiKind};
     /// use std::collections::HashMap;
+    /// use emoji_builder::emoji_tables::EmojiTable;
     ///
-    /// let mut table = HashMap::new();
+    /// let mut table = EmojiTable::new();
     /// table.insert(vec![0x1f914 as u32], (vec![EmojiKind::Emoji], Some(String::from("Thinking Face"))));
     ///
     /// let thinking = Emoji::from_sequence("1f914.png", &Some(table)).unwrap();
@@ -161,7 +162,7 @@ impl Emoji {
     ///
     /// let emoji = Emoji::from_flag(germany, &None);
     ///
-    /// assert_eq!(emoji, Emoji::from_u32_sequence(sequence, &None));
+    /// assert_eq!(emoji.unwrap(), Emoji::from_u32_sequence(sequence, &None).unwrap());
     /// ```
     ///
     /// ```
@@ -174,7 +175,7 @@ impl Emoji {
     ///
     /// let emoji = Emoji::from_flag(nrw, &None);
     ///
-    /// assert_eq!(emoji, Emoji::from_u32_sequence(sequence, &None));
+    /// assert_eq!(emoji.unwrap(), Emoji::from_u32_sequence(sequence, &None).unwrap());
     /// ```
     pub fn from_flag(flag: &str, table: &Option<EmojiTable>) -> Result<Emoji, EmojiError> {
         lazy_static! {
@@ -226,7 +227,7 @@ impl Emoji {
     /// let path = PathBuf::from(path_str);
     /// let sequence = vec![0x1f914];
     ///
-    /// let emoji = Emoji::from_file(path, None, false).unwrap();
+    /// let emoji = Emoji::from_file(path.clone(), &None, false).unwrap();
     ///
     /// assert_eq!(emoji, Emoji {
     ///     sequence,
@@ -243,9 +244,9 @@ impl Emoji {
     /// let path_str = String::from("DE.png");
     ///
     /// let path = PathBuf::from(path_str);
-    /// let sequence = vec![0x1f9e9, 0x1f9ea];
+    /// let sequence = vec![0x1f1e9, 0x1f1ea];
     ///
-    /// let emoji = Emoji::from_file(path, None, true).unwrap();
+    /// let emoji = Emoji::from_file(path.clone(), &None, true).unwrap();
     ///
     /// assert_eq!(emoji, Emoji {
     ///     sequence,
@@ -257,7 +258,7 @@ impl Emoji {
     pub fn from_file(
         file: PathBuf,
         table: &Option<EmojiTable>,
-        flag: bool,
+        flag: bool
     ) -> Result<Emoji, EmojiError> {
         let name = file.file_name();
         if let Some(name) = name {
@@ -282,15 +283,16 @@ impl Emoji {
     /// ```
     /// use std::collections::HashMap;
     /// use emoji_builder::emoji::{EmojiKind, Emoji};
+    /// use emoji_builder::emoji_tables::EmojiTable;
     ///
-    /// let mut table = HashMap::new();
+    /// let mut table = EmojiTable::new();
     /// let sequence = vec![0x1f914];
     /// let kind = vec![EmojiKind::Emoji];
     /// let name = String::from("Thinking Face");
     ///
     /// table.insert(sequence.clone(), (kind.clone(), Some(name.clone())));
     ///
-    /// let mut emoji = Emoji::from(seq);
+    /// let mut emoji = Emoji::from(sequence.clone());
     /// emoji.set_kind(&table);
     ///
     /// assert_eq!(emoji, Emoji {
@@ -302,7 +304,7 @@ impl Emoji {
     /// ```
     pub fn set_kind(&mut self, table: &EmojiTable) -> Result<(), EmojiTableError> {
         let seq = &self.sequence;
-        match table.get(seq) {
+        match &table.get(seq) {
             Some((kind, _)) => {
                 self.kind = Some(kind.clone());
                 Ok(())
@@ -316,17 +318,17 @@ impl Emoji {
     /// `None` (if the sequence is empty).
     /// # Examples
     /// ```
-    /// use emoji_builder::emoji::EmojiKind;
+    /// use emoji_builder::emoji::{Emoji,EmojiKind};
     ///
     /// let emoji = Emoji::from(vec![0x1f914]);
     ///
     /// let kind = emoji.guess_kind();
     ///
-    /// assert_eq!(kind, Some(EmojiKind::Emoji));
+    /// assert_eq!(kind.unwrap(), EmojiKind::Emoji);
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emoji::EmojiKind;
+    /// use emoji_builder::emoji::{Emoji, EmojiKind};
     ///
     /// let emoji = Emoji::from(vec![0x1f914, 0x200d, 0x42]);
     ///
@@ -336,7 +338,7 @@ impl Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emoji::EmojiKind;
+    /// use emoji_builder::emoji::{Emoji, EmojiKind};
     ///
     /// let emoji = Emoji::from(vec![0x1f914, 0x42]);
     ///
@@ -346,7 +348,7 @@ impl Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emoji::EmojiKind;
+    /// use emoji_builder::emoji::{Emoji, EmojiKind};
     ///
     /// let emoji = Emoji::from(vec![]);
     ///
@@ -354,8 +356,8 @@ impl Emoji {
     ///
     /// assert_eq!(kind, None);
     /// ```
-    pub fn guess_kind(&mut self) -> Option<EmojiKind> {
-        if self.sequence.len() == 0 {
+    pub fn guess_kind(&self) -> Option<EmojiKind> {
+        if self.sequence.is_empty() {
             None
         } else if self.sequence.len() == 1 {
             Some(EmojiKind::Emoji)
@@ -371,15 +373,16 @@ impl Emoji {
     /// ```
     /// use std::collections::HashMap;
     /// use emoji_builder::emoji::{EmojiKind, Emoji};
+    /// use emoji_builder::emoji_tables::EmojiTable;
     ///
-    /// let mut table = HashMap::new();
+    /// let mut table = EmojiTable::new();
     /// let sequence = vec![0x1f914];
     /// let kind = vec![EmojiKind::Emoji];
     /// let name = String::from("Thinking Face");
     ///
     /// table.insert(sequence.clone(), (kind.clone(), Some(name.clone())));
     ///
-    /// let mut emoji = Emoji::from(seq);
+    /// let mut emoji = Emoji::from(sequence.clone());
     /// emoji.set_name(&table);
     ///
     /// assert_eq!(emoji, Emoji {
@@ -391,7 +394,7 @@ impl Emoji {
     /// ```
     pub fn set_name(&mut self, table: &EmojiTable) -> Result<(), EmojiTableError> {
         let seq = &self.sequence;
-        match table.get(seq) {
+        match &table.get(seq) {
             Some((_, name)) => {
                 self.name = name.clone();
                 Ok(())
@@ -420,6 +423,18 @@ impl From<Vec<u32>> for Emoji {
             kind: None,
             svg_path: None,
         }
+    }
+}
+
+impl AsRef<Vec<u32>> for Emoji {
+    fn as_ref(&self) -> &Vec<u32> {
+        &self.sequence
+    }
+}
+
+impl AsRef<[u32]> for Emoji {
+    fn as_ref(&self) -> &[u32] {
+        &self.sequence.as_ref()
     }
 }
 

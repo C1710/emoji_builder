@@ -21,6 +21,7 @@ use std::iter::FromIterator;
 use crate::emoji::Emoji;
 use crate::emoji::EmojiKind::EmojiZwjSequence;
 use crate::emoji_tables;
+use crate::emoji_tables::EmojiTable;
 
 const SVG_PATH: &str = "test_files/svg";
 const TABLES_PATH: &str = "test_files/unicode";
@@ -43,7 +44,7 @@ fn emoji_build() {
 
     assert_eq!(table_paths.len(), TABLES);
 
-    let table = emoji_tables::build_table(&table_paths).unwrap();
+    let table = EmojiTable::from_files(&table_paths).unwrap();
 
     assert_eq!(table.len(), TABLE_ENTRIES);
 
