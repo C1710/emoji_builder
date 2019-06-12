@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Constantin A.
+ * Copyright 2019 Constantin A. <emoji.builder@c1710.de>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,6 @@ type EmojiTableKey = Vec<u32>;
 /// https://unicode.org/Public/emoji/12.0/
 /// It maps emoji code sequences to their kind and (if given) a description/name
 pub type EmojiTable = HashMap<EmojiTableKey, (Vec<EmojiKind>, Option<String>)>;
-
 
 /// Reads multiple files which are formatted in the same way as the Unicode® emoji data tables
 /// (See https://unicode.org/Public/emoji/12.0/) and builds a lookup table
@@ -86,6 +85,7 @@ pub fn build_table(paths: &[PathBuf]) -> Result<EmojiTable, Error> {
 /// # Examples
 /// ```
 /// use emoji_builder::emoji_tables::{EmojiTable, expand};
+/// use emoji_builder::emoji::EmojiKind;
 ///
 /// let mut table = EmojiTable::new();
 ///
@@ -95,7 +95,7 @@ pub fn build_table(paths: &[PathBuf]) -> Result<EmojiTable, Error> {
 /// let rainbow = vec![0x1f3f3, 0xfe0f, 0x200d, 0x1f308];
 /// let rainbow_no_fe0f = vec![0x1f3f3, 0x200d, 0x1f308];
 ///
-/// let rainbow_entry = (vec![EmojiZwjSequence], Some(String::from_str("rainbow flag")));
+/// let rainbow_entry = (vec![EmojiKind::EmojiZwjSequence], Some(String::from_str("rainbow flag")));
 ///
 /// assert!(table.contains_key(&rainbow));
 /// assert!(table.contains_key(&rainbow_no_fe0f));
@@ -125,7 +125,7 @@ pub fn expand(table: &mut EmojiTable, path: &Path) -> Result<(), Error> {
                         let kind = Some(kind_descr.next().unwrap().trim());
                         let description = match kind_descr.next() {
                             Some(description) => Some(description.trim()),
-                            None => None
+                            None => None,
                         };
                         (kind, description)
                     }
@@ -134,12 +134,11 @@ pub fn expand(table: &mut EmojiTable, path: &Path) -> Result<(), Error> {
                     _ => (Some(cols[1].trim()), Some(cols[2].trim())),
                 };
 
-
                 if let Some(kind) = kind {
                     let emoji = cols[0].trim();
                     let kind = match EmojiKind::from_str(kind) {
                         Ok(kind) => kind,
-                        Err(unknown_kind) => unknown_kind.into()
+                        Err(unknown_kind) => unknown_kind.into(),
                     };
 
                     if let Some(capt) = RANGE.captures(emoji) {
@@ -151,8 +150,12 @@ pub fn expand(table: &mut EmojiTable, path: &Path) -> Result<(), Error> {
                         table.insert(seq, entry);
                         let emoji = emoji.to_lowercase();
                         if emoji.contains("fe0f") {
-                            let (seq, entry) =
-                                parse_sequence(table, &emoji.to_lowercase().replace("fe0f", ""), kind, description);
+                            let (seq, entry) = parse_sequence(
+                                table,
+                                &emoji.to_lowercase().replace("fe0f", ""),
+                                kind,
+                                description,
+                            );
                             table.insert(seq, entry);
                         }
                     }
@@ -163,11 +166,10 @@ pub fn expand(table: &mut EmojiTable, path: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-
 fn get_description(table: &EmojiTable, sequence: &EmojiTableKey) -> Option<String> {
     match table.get(sequence) {
         Some((_, description)) => description.clone(),
-        None => None
+        None => None,
     }
 }
 
@@ -192,8 +194,8 @@ fn parse_range(table: &EmojiTable, start: &str, end: &str, kind: EmojiKind) -> E
                 let mut new_kinds = Vec::with_capacity(existing_kinds.unwrap().0.len() + 1);
                 new_kinds.extend_from_slice(&kinds);
                 new_kinds
-            },
-            None => Vec::with_capacity(1)
+            }
+            None => Vec::with_capacity(1),
         };
         kinds.push(kind.clone());
 
@@ -204,8 +206,12 @@ fn parse_range(table: &EmojiTable, start: &str, end: &str, kind: EmojiKind) -> E
     out_table
 }
 
-
-fn parse_sequence(table: &EmojiTable, emoji: &str, kind: EmojiKind, description: Option<&str>) -> (EmojiTableKey, (Vec<EmojiKind>, Option<String>)) {
+fn parse_sequence(
+    table: &EmojiTable,
+    emoji: &str,
+    kind: EmojiKind,
+    description: Option<&str>,
+) -> (EmojiTableKey, (Vec<EmojiKind>, Option<String>)) {
     lazy_static! {
         static ref HEX_SEQUENCE: Regex = Regex::new(r"[a-fA-F0-9]+").unwrap();
     }
@@ -224,8 +230,8 @@ fn parse_sequence(table: &EmojiTable, emoji: &str, kind: EmojiKind, description:
             let mut new_kinds = Vec::with_capacity(existing_kinds.unwrap().0.len() + 1);
             new_kinds.extend_from_slice(&kinds);
             new_kinds
-        },
-        None => Vec::with_capacity(1)
+        }
+        None => Vec::with_capacity(1),
     };
 
     kinds.push(kind);
@@ -244,5 +250,5 @@ fn parse_sequence(table: &EmojiTable, emoji: &str, kind: EmojiKind, description:
 /// A representation of errors encountered while parsing or using emoji tables.
 #[derive(Debug)]
 pub enum EmojiTableError {
-    KeyNotFound(EmojiTableKey)
+    KeyNotFound(EmojiTableKey),
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Constantin A.
+ * Copyright 2019 Constantin A. <emoji.builder@c1710.de>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,7 +45,7 @@ struct Blobmoji {
     name: Option<String>,
     images: HashMap<Vec<u32>, Option<Vec<u8>>>,
     hashes: FileHashes,
-    verbose: bool
+    verbose: bool,
 }
 
 const HASHES: &str = "hashes.csv";
@@ -53,14 +53,18 @@ const HASHES: &str = "hashes.csv";
 impl EmojiBuilder for Blobmoji {
     type Err = ();
 
-    fn new(build_path: PathBuf, verbose: bool, _arguments: &ArgMatches) -> Result<Box<Self>, Self::Err> {
+    fn new(
+        build_path: PathBuf,
+        verbose: bool,
+        _arguments: &ArgMatches,
+    ) -> Result<Box<Self>, Self::Err> {
         let hash_path = build_path.join(String::from(HASHES));
         let builder = Box::new(Blobmoji {
             build_path: build_path,
             name: None,
             images: HashMap::new(),
             hashes: FileHashes::from_path(hash_path.as_path()).unwrap_or_default(),
-            verbose
+            verbose,
         });
         Ok(builder)
     }
@@ -70,12 +74,12 @@ impl EmojiBuilder for Blobmoji {
             if let Some(rendered) = self.render_svg(emoji) {
                 let quantized = match self.quantize_png(&rendered) {
                     Some(quantized) => quantized,
-                    None => &rendered
+                    None => &rendered,
                 };
 
                 let optimized = match self.optimize_png(quantized) {
                     Ok(optimized) => optimized,
-                    Err(_) => Vec::from(quantized)
+                    Err(_) => Vec::from(quantized),
                 };
 
                 self.images.insert(emoji.sequence.clone(), Some(optimized));
@@ -86,7 +90,9 @@ impl EmojiBuilder for Blobmoji {
     }
 
     fn build<I>(&mut self, emojis: I, output_file: PathBuf) -> Result<(), Self::Err>
-        where I: IntoIterator<Item=Emoji> {
+        where
+            I: IntoIterator<Item=Emoji>,
+    {
         unimplemented!()
     }
 

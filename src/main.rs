@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Constantin A.
+ * Copyright 2019 Constantin A. <emoji.builder@c1710.de>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-
 #[macro_use]
 extern crate clap;
 
@@ -22,7 +21,7 @@ use std::fs;
 use std::fs::DirEntry;
 use std::path::PathBuf;
 
-use clap::{App, ArgMatches, SubCommand};
+use clap::{App, ArgMatches};
 use rayon::prelude::*;
 
 use emoji_builder::emoji::Emoji;
@@ -32,25 +31,27 @@ fn main() {
     let args = parse_args();
     let matches = args.1;
     let args = args.0;
+
     let table_paths = args.tables_path;
 
     let table = match table_paths {
         Some(table_paths) => {
-            let table_paths: Vec<_> = table_paths.read_dir().unwrap()
+            let table_paths: Vec<_> = table_paths
+                .read_dir()
+                .unwrap()
                 .filter(|entry| entry.is_ok())
                 .map(|entry| entry.unwrap())
                 .map(|entry| entry.path())
                 .collect();
             Some(emoji_tables::build_table(&table_paths))
-        },
-        None => None
+        }
+        None => None,
     };
     let table = match table {
         Some(Ok(table)) => Some(table),
         Some(Err(_)) => None,
-        None => None
+        None => None,
     };
-
 
     if table.is_some() {
         println!("Using unicode table");
@@ -60,11 +61,12 @@ fn main() {
 
     let paths: Vec<_> = fs::read_dir(images).unwrap().collect();
 
-    let emojis: Vec<Emoji> = paths.par_iter()
+    let emojis: Vec<Emoji> = paths
+        .par_iter()
         .filter(|path| path.is_ok())
         .map(|path: &Result<DirEntry, _>| match path {
             Ok(path) => path,
-            Err(_) => unreachable!()
+            Err(_) => unreachable!(),
         })
         .map(std::fs::DirEntry::path)
         .filter(|path| path.is_file())
@@ -91,9 +93,7 @@ struct BuilderArguments {
 
 fn parse_args<'a>() -> (BuilderArguments, ArgMatches<'a>) {
     let yaml = load_yaml!("cli.yaml");
-    let matches = App::from_yaml(yaml)
-        .version(crate_version!())
-        .get_matches();
+    let matches: ArgMatches<'a> = App::from_yaml(yaml).version(crate_version!()).get_matches();
 
     let verbose = matches.is_present("verbose");
     let images: PathBuf = matches.value_of("images").unwrap().into();
@@ -107,22 +107,23 @@ fn parse_args<'a>() -> (BuilderArguments, ArgMatches<'a>) {
 
     let flags = match flags {
         Some(flags) => Some(PathBuf::from(flags)),
-        None => None
+        None => None,
     };
 
     let tables = match tables {
         Some(tables) => Some(PathBuf::from(tables)),
-        None => None
+        None => None,
     };
 
-    (BuilderArguments {
-        svg_path: images,
-        flag_path: flags,
-        tables_path: tables,
-        build_path: build,
-        output_path,
-        verbose,
-    }, matches)
+    (
+        BuilderArguments {
+            svg_path: images,
+            flag_path: flags,
+            tables_path: tables,
+            build_path: build,
+            output_path,
+            verbose,
+        },
+        matches,
+    )
 }
-
-

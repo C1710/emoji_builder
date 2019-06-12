@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Constantin A.
+ * Copyright 2019 Constantin A. <emoji.builder@c1710.de>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,13 +32,19 @@ pub trait EmojiBuilder {
 
     /// Instantiates a new `EmojiBuilder` before using it.
     /// This will set up different settings and specify the working directory for the builder.
-    fn new(build_dir: PathBuf, verbose: bool, arguments: &ArgMatches) -> Result<Box<Self>, Self::Err>;
+    fn new(
+        build_dir: PathBuf,
+        verbose: bool,
+        arguments: &ArgMatches,
+    ) -> Result<Box<Self>, Self::Err>;
 
     /// Called when the builder is supposed to stop its work.
     ///
     /// The difference to the `Drop` trait is that
     /// this might be called before the builder is dropped and an error may be returned.
-    fn finish(&self) -> Result<(), Self::Err> { Ok(()) }
+    fn finish(&self) -> Result<(), Self::Err> {
+        Ok(())
+    }
 
     /// Lets the builder reset a build directory so that it can be reused by that builder just like
     /// it would if an empty directory was used.
@@ -49,17 +55,13 @@ pub trait EmojiBuilder {
         let parent = build_dir.parent();
         match parent {
             None => Err(ResetError::NoParentError),
-            Some(_) => {
-                match remove_dir_all::remove_dir_all(&build_dir) {
+            Some(_) => match remove_dir_all::remove_dir_all(&build_dir) {
+                Err(err) => Err(err.into()),
+                Ok(_) => match create_dir(build_dir) {
                     Err(err) => Err(err.into()),
-                    Ok(_) => {
-                        match create_dir(build_dir) {
-                            Err(err) => Err(err.into()),
-                            Ok(_) => Ok(())
-                        }
-                    }
-                }
-            }
+                    Ok(_) => Ok(()),
+                },
+            },
         }
     }
 
@@ -73,7 +75,8 @@ pub trait EmojiBuilder {
     /// Calling this function has to be performed _after_ calling `prepare` for all `Emoji`s in
     /// `emojis`.
     fn build<I>(&mut self, emojis: I, output_file: PathBuf) -> Result<(), Self::Err>
-        where I: IntoIterator<Item=Emoji>;
+        where
+            I: IntoIterator<Item=Emoji>;
 
     /// Lets the builder define its own set of command line arguments.
     /// It is required to be able to at least call the builder from the CLI

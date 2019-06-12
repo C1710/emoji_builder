@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Constantin A.
+ * Copyright 2019 Constantin A. <emoji.builder@c1710.de>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -66,17 +66,15 @@ impl FileHashes {
             let hash = self.0.get(&emoji.sequence);
             if let Some(hash) = hash {
                 match file {
-                    Ok(mut file) => {
-                        match io::copy(&mut file, &mut hasher) {
-                            Ok(_) => {
-                                let result = hasher.result();
-                                let result = result.as_slice();
-                                Ok(*hash == result)
-                            }
-                            Err(error) => Err(Io(error))
+                    Ok(mut file) => match io::copy(&mut file, &mut hasher) {
+                        Ok(_) => {
+                            let result = hasher.result();
+                            let result = result.as_slice();
+                            Ok(*hash == result)
                         }
-                    }
-                    Err(error) => Err(Io(error))
+                        Err(error) => Err(Io(error)),
+                    },
+                    Err(error) => Err(Io(error)),
                 }
             } else {
                 // If there is no entry, the hash can be assumed as different
@@ -93,18 +91,16 @@ impl FileHashes {
             let mut hasher = Sha256::new();
             let file = fs::File::open(path);
             match file {
-                Ok(mut file) => {
-                    match io::copy(&mut file, &mut hasher) {
-                        Ok(_) => {
-                            let result = hasher.result();
-                            let result = result.as_slice();
+                Ok(mut file) => match io::copy(&mut file, &mut hasher) {
+                    Ok(_) => {
+                        let result = hasher.result();
+                        let result = result.as_slice();
 
-                            Ok(self.0.insert(emoji.sequence.clone(), Vec::from(result)))
-                        }
-                        Err(error) => Err(Io(error))
+                        Ok(self.0.insert(emoji.sequence.clone(), Vec::from(result)))
                     }
-                }
-                Err(error) => Err(Io(error))
+                    Err(error) => Err(Io(error)),
+                },
+                Err(error) => Err(Io(error)),
             }
         } else {
             Err(NoFileSpecified)
@@ -138,7 +134,8 @@ impl Default for FileHashes {
 fn parse_hex(sequence: &str) -> Vec<u32> {
     let sequence = sequence.trim();
     let sequence = sequence.split(' ');
-    sequence.map(|code| u32::from_str_radix(code, 16))
+    sequence
+        .map(|code| u32::from_str_radix(code, 16))
         .filter(|code| !code.is_err())
         .map(|code| code.unwrap())
         .collect()

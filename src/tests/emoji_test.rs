@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Constantin A.
+ * Copyright 2019 Constantin A. <emoji.builder@c1710.de>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,10 +32,10 @@ const TABLE_ENTRIES: usize = 76 - 21 + 1 + 2 * (9);
 const EMOJIS: usize = 7;
 const TABLES: usize = 2;
 
-
 #[test]
 fn emoji_build() {
-    let table_paths: Vec<_> = fs::read_dir(TABLES_PATH).expect("Couldn't read the unicode directory")
+    let table_paths: Vec<_> = fs::read_dir(TABLES_PATH)
+        .expect("Couldn't read the unicode directory")
         .filter(std::result::Result::is_ok)
         .map(std::result::Result::unwrap)
         .map(|entry| entry.path())
@@ -50,7 +50,8 @@ fn emoji_build() {
     //let table = Arc::new(table);
     let table = Some(table);
 
-    let emojis: HashSet<_> = fs::read_dir(SVG_PATH).expect("Couldn't read the svg directory")
+    let emojis: HashSet<_> = fs::read_dir(SVG_PATH)
+        .expect("Couldn't read the svg directory")
         .filter(std::result::Result::is_ok)
         .map(std::result::Result::unwrap)
         .map(|entry| entry.path())
@@ -129,5 +130,13 @@ fn build_emojis() -> HashSet<Emoji> {
         svg_path: None,
     };
 
-    HashSet::from_iter(vec![rainbow, transgender, otter, skunk, falafel, diving_mask, diya])
+    HashSet::from_iter(vec![
+        rainbow,
+        transgender,
+        otter,
+        skunk,
+        falafel,
+        diving_mask,
+        diya,
+    ])
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Constantin A.
+ * Copyright 2019 Constantin A. <emoji.builder@c1710.de>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,9 +26,7 @@ use crate::emoji_tables::{EmojiTable, EmojiTableError};
 use crate::emoji_tables::EmojiTableError::KeyNotFound;
 
 /// A struct that holds information for one particular emoji (which might also be a sequence).
-#[derive(Debug)]
-#[derive(Eq)]
-#[derive(Clone)]
+#[derive(Debug, Eq, Clone)]
 pub struct Emoji {
     /// The sequence of Unicode® character codepoints that represents this emoji.
     pub sequence: Vec<u32>,
@@ -45,11 +43,7 @@ pub struct Emoji {
 }
 
 /// An internal representation for the different emoji types represented in the Unicode® Tables
-#[derive(Debug)]
-#[derive(Clone)]
-#[derive(Hash)]
-#[derive(PartialEq)]
-#[derive(Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum EmojiKind {
     Emoji,
     EmojiZwjSequence,
@@ -62,7 +56,6 @@ pub enum EmojiKind {
     EmojiModifierSequence,
     Other(String),
 }
-
 
 impl Emoji {
     /// Parses a character sequence (e.g. from a filename) into an emoji object
@@ -114,7 +107,8 @@ impl Emoji {
         Emoji::from_u32_sequence(code_sequences, table)
     }
 
-    /// Generates an Emoji from a given codepoint sequence (and maybe an `EmojiTable` for additional metadata).
+    /// Generates an Emoji from a given codepoint sequence
+    /// (and maybe an `EmojiTable` for additional metadata).
     /// If the sequence is empty, it will return an error.
     /// # Examples
     /// ```
@@ -131,7 +125,10 @@ impl Emoji {
     ///     svg_path: None
     /// });
     /// ```
-    pub fn from_u32_sequence(code_sequence: Vec<u32>, table: &Option<EmojiTable>) -> Result<Emoji, EmojiError> {
+    pub fn from_u32_sequence(
+        code_sequence: Vec<u32>,
+        table: &Option<EmojiTable>,
+    ) -> Result<Emoji, EmojiError> {
         if !code_sequence.is_empty() {
             let mut emoji = Emoji::from(code_sequence);
             if let Some(table) = table {
@@ -149,8 +146,9 @@ impl Emoji {
     const CANCEL_TAG: u32 = 0xe007f;
     const BLACK_FLAG: u32 = 0x1f3f4;
 
-    /// Creates an emoji from a flag sequence given in their ISO-3166-1 representation or a subdivision
-    /// given in their ISO-3166-2 representation (i.e. with a dash in between).
+    /// Creates an emoji from a flag sequence given in their
+    /// ISO-3166-1 representation or a subdivision given in their ISO-3166-2 representation
+    /// (i.e. with a dash in between).
     /// Everything after the first dot (`.`) will be ignored (usually file extensions)
     /// # Examples
     /// ```
@@ -185,7 +183,9 @@ impl Emoji {
         }
         // Strip any file extensions
         let flag = flag.split('.').next().unwrap().trim().to_uppercase();
+
         if COUNTRY_FLAG.is_match(&flag) {
+            // ISO-3166-1 country code (DE)
             let codepoints = flag.chars();
             let codepoints = codepoints
                 .map(|codepoint| codepoint as u32)
@@ -193,11 +193,13 @@ impl Emoji {
                 .collect();
             Emoji::from_u32_sequence(codepoints, table)
         } else if let Some(capt) = REGION_FLAG.captures(&flag) {
+            // ISO 3166-2 subdivision code (DE-NW)
             let mut flag = String::with_capacity(capt[1].len() + capt[2].len() + 1);
-            // The 'X' is just a placeholder which will be replaced by the BLACK_FLAG codepoint
+            // The 'X' is just a placeholder which will be replaced by the BLACK_FLAG codepoint later
             flag.push('X');
             flag.push_str(&capt[1]);
             flag.push_str(&capt[2]);
+
             let codepoints = flag.chars();
             let mut codepoints: Vec<u32> = codepoints
                 .map(|codepoint| codepoint as u32)
@@ -252,7 +254,11 @@ impl Emoji {
     ///     svg_path: Some(path)
     /// })
     /// ```
-    pub fn from_file(file: PathBuf, table: &Option<EmojiTable>, flag: bool) -> Result<Emoji, EmojiError> {
+    pub fn from_file(
+        file: PathBuf,
+        table: &Option<EmojiTable>,
+        flag: bool,
+    ) -> Result<Emoji, EmojiError> {
         let name = file.file_name();
         if let Some(name) = name {
             if let Some(name) = name.to_str() {
@@ -270,7 +276,8 @@ impl Emoji {
         Err(NotAFileName(file.to_path_buf()))
     }
 
-    /// Performs a lookup in the given `EmojiTable` and assigns the proper kind attribute to this `Emoji`.
+    /// Performs a lookup in the given `EmojiTable`
+    /// and assigns the proper kind attribute to this `Emoji`.
     /// # Example
     /// ```
     /// use std::collections::HashMap;
@@ -299,8 +306,8 @@ impl Emoji {
             Some((kind, _)) => {
                 self.kind = Some(kind.clone());
                 Ok(())
-            },
-            None => Err(KeyNotFound(seq.clone()))
+            }
+            None => Err(KeyNotFound(seq.clone())),
         }
     }
 
@@ -388,8 +395,8 @@ impl Emoji {
             Some((_, name)) => {
                 self.name = name.clone();
                 Ok(())
-            },
-            None => Err(KeyNotFound(seq.clone()))
+            }
+            None => Err(KeyNotFound(seq.clone())),
         }
     }
 
@@ -461,7 +468,7 @@ impl FromStr for EmojiKind {
             "emoji keycap sequence" => Ok(EmojiKind::EmojiKeycapSequence),
             "emoji flag sequence" => Ok(EmojiKind::EmojiFlagSequence),
             "emoji modifier sequence" => Ok(EmojiKind::EmojiModifierSequence),
-            _ => Err(UnknownEmojiKind(EmojiKind::Other(kind)))
+            _ => Err(UnknownEmojiKind(EmojiKind::Other(kind))),
         }
     }
 }
@@ -483,7 +490,6 @@ impl From<UnknownEmojiKind> for EmojiKind {
     }
 }
 
-
 #[derive(Debug)]
 pub enum EmojiError {
     /// Indicates that either no codepoint sequence has been parsed or that a string didn't
@@ -496,4 +502,3 @@ pub enum EmojiError {
     /// (i.e. "if the path terminates in `..`").
     NotAFileName(PathBuf),
 }
-
