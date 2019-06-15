@@ -186,7 +186,8 @@ impl Blobmoji {
     /// The output images are supposed to be a bit wider than the square images.
     /// This function currently copies the whole image which is kinda inefficient.
     fn enlarge_width(content: &[u8]) -> Vec<u8> {
-        Blobmoji::enlarge_by(content, IMG_WIDTH, HEIGHT, WIDTH - IMG_WIDTH, 0)
+        let content_height = content.len() as u32 / (IMG_WIDTH * 4);
+        Blobmoji::enlarge_by(content, IMG_WIDTH, content_height, WIDTH - IMG_WIDTH, 0)
     }
 
     const EMPTY_PIXEL: [u8; 4] = [0; 4];
@@ -232,7 +233,9 @@ impl Blobmoji {
         image.extend_from_slice(&pad_vertical);
         for line in 0..src_height as usize {
             image.extend_from_slice(&pad_horizontal);
-            image.extend_from_slice(content);
+            let start = line * src_width as usize * 4;
+            let end = (line + 1) * src_width as usize * 4;
+            image.extend_from_slice(&content[start..end]);
             image.extend_from_slice(&pad_horizontal);
             //
             if d_width % 2 != 0 {
