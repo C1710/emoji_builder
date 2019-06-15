@@ -64,6 +64,7 @@ impl FileHashes {
             let mut hasher = Sha256::new();
             let file = fs::File::open(path);
             let hash = self.0.get(&emoji.sequence);
+
             if let Some(hash) = hash {
                 match file {
                     Ok(mut file) => match io::copy(&mut file, &mut hasher) {

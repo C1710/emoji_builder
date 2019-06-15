@@ -20,6 +20,7 @@ rand = "0.6.5"
 rayon = "1.0"
 remove_dir_all = "0.5.1"
 clap = {version = "2.33", features = ["yaml"]}
+png = "0.14.1"
 
 [build-dependencies]
 cc = "1.0.37"

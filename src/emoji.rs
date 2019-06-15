@@ -15,10 +15,13 @@
  */
 //! The main data structs for single emojis.
 
+use std::fmt::{Display, Formatter};
+use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use itertools::Itertools;
 use regex::{CaptureMatches, Regex};
 
 use crate::emoji::EmojiError::NotAFileName;
@@ -192,7 +195,13 @@ impl Emoji {
                 .map(|codepoint| codepoint as u32)
                 .map(|codepoint| codepoint + Emoji::FLAG_OFFSET)
                 .collect();
-            Emoji::from_u32_sequence(codepoints, table)
+            let mut emoji = Emoji::from_u32_sequence(codepoints, table);
+            if let Ok(emoji) = &mut emoji {
+                if let Some(kind) = &mut emoji.kind {
+                    kind.push(EmojiKind::EmojiFlagSequence);
+                }
+            };
+            emoji
         } else if let Some(capt) = REGION_FLAG.captures(&flag) {
             // ISO 3166-2 subdivision code (DE-NW)
             let mut flag = String::with_capacity(capt[1].len() + capt[2].len() + 1);
@@ -502,6 +511,18 @@ impl UnknownEmojiKind {
 impl From<UnknownEmojiKind> for EmojiKind {
     fn from(kind: UnknownEmojiKind) -> Self {
         kind.0
+    }
+}
+
+impl Display for Emoji {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        if let Some(name) = &self.name {
+            write!(f, "{}", name)
+        } else {
+            write!(f, "[{}]", self.sequence.iter()
+                .map(|codepoint| format!("{:X}", codepoint))
+                .join("-"))
+        }
     }
 }
 

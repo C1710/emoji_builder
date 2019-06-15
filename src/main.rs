@@ -17,6 +17,7 @@
 #[macro_use]
 extern crate clap;
 
+use std::collections::HashMap;
 use std::fs;
 use std::fs::DirEntry;
 use std::path::PathBuf;
@@ -24,8 +25,9 @@ use std::path::PathBuf;
 use clap::{App, ArgMatches};
 use rayon::prelude::*;
 
+use emoji_builder::builder::EmojiBuilder;
+use emoji_builder::builders::blobmoji::Blobmoji;
 use emoji_builder::emoji::Emoji;
-use emoji_builder::emoji_tables;
 use emoji_builder::emoji_tables::EmojiTable;
 
 fn main() {
@@ -57,10 +59,12 @@ fn main() {
     }
 
     let images = args.svg_path;
+    let flags = args.flag_path.unwrap_or_default();
 
     let paths: Vec<_> = fs::read_dir(images).unwrap().collect();
+    let flag_paths: Vec<_> = fs::read_dir(flags).unwrap().collect();
 
-    let emojis: Vec<Emoji> = paths
+    let emojis = paths
         .par_iter()
         .filter(|path| path.is_ok())
         .map(|path: &Result<DirEntry, _>| match path {
@@ -69,16 +73,33 @@ fn main() {
         })
         .map(std::fs::DirEntry::path)
         .filter(|path| path.is_file())
-        .map(|path| Emoji::from_file(path, &table, false))
+        .map(|path| Emoji::from_file(path, &table, false));
+    let flags = flag_paths
+        .par_iter()
+        .filter(|path| path.is_ok())
+        .map(|path: &Result<DirEntry, _>| match path {
+            Ok(path) => path,
+            Err(_) => unreachable!(),
+        })
+        .map(std::fs::DirEntry::path)
+        .filter(|path| path.is_file())
+        .map(|path| Emoji::from_file(path, &table, true));
+
+    let emojis: Vec<Emoji> = emojis.chain(flags)
         .filter(std::result::Result::is_ok)
         .map(std::result::Result::unwrap)
         .collect();
 
     if args.verbose {
-        for emoji in emojis {
-            println!("{:?}", emoji);
-        }
+        println!("Verbose mode enabled.");
     }
+
+    let mut builder = Blobmoji::new(args.build_path, args.verbose, None).unwrap();
+    let output = args.output_path;
+    let prepared: HashMap<&Emoji, _> = emojis.par_iter()
+        .map(|emoji| (emoji, builder.as_ref().prepare(emoji)))
+        .collect();
+    builder.as_mut().build(prepared, output);
 }
 
 struct BuilderArguments {

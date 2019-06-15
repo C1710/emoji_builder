@@ -15,6 +15,7 @@
  */
 //! This is the main module for the actual emoji processing.
 
+use std::collections::HashMap;
 use std::fs::create_dir;
 use std::path::PathBuf;
 
@@ -29,13 +30,14 @@ use crate::emoji::Emoji;
 /// it might be used in other contexts as well.
 pub trait EmojiBuilder {
     type Err;
+    type PreparedEmoji;
 
     /// Instantiates a new `EmojiBuilder` before using it.
     /// This will set up different settings and specify the working directory for the builder.
     fn new(
         build_dir: PathBuf,
         verbose: bool,
-        arguments: &ArgMatches,
+        arguments: Option<&ArgMatches>,
     ) -> Result<Box<Self>, Self::Err>;
 
     /// Called when the builder is supposed to stop its work.
@@ -68,15 +70,17 @@ pub trait EmojiBuilder {
     /// Preprocess a single emoji which will be later used to create the emoji set.
     ///
     /// This function needs to be thread-safe as the preparation might be done in parallel/concurrency.
-    fn prepare(&mut self, emoji: &Emoji) -> Result<(), Self::Err>;
+    fn prepare(&self, emoji: &Emoji) -> Result<Self::PreparedEmoji, Self::Err>;
 
     /// Builds the emoji set with the given emojis and sends the output to the specified file.
     ///
     /// Calling this function has to be performed _after_ calling `prepare` for all `Emoji`s in
     /// `emojis`.
-    fn build<I>(&mut self, emojis: I, output_file: PathBuf) -> Result<(), Self::Err>
-        where
-            I: IntoIterator<Item=Emoji>;
+    fn build(
+        &mut self,
+        emojis: HashMap<&Emoji, Result<Self::PreparedEmoji, Self::Err>>,
+        output_file: PathBuf,
+    ) -> Result<(), Self::Err>;
 
     /// Lets the builder define its own set of command line arguments.
     /// It is required to be able to at least call the builder from the CLI
