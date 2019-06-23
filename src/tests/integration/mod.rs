@@ -14,7 +14,5 @@
  * limitations under the License.
  */
 
-mod emoji_test;
-mod utils_test;
-mod builder_test;
-mod integration;
+mod caller;
+mod builder;

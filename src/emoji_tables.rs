@@ -58,10 +58,11 @@ impl EmojiTable {
     /// use std::path::PathBuf;
     /// use emoji_builder::emoji::EmojiKind::EmojiZwjSequence;
     /// use emoji_builder::emoji_tables::EmojiTable;
+    /// use std::collections::HashMap;
     ///
     /// // Contains the entry
     /// // 1F3F3 FE0F 200D 1F308 ; Emoji_ZWJ_Sequence  ; rainbow flag #  7.0  [1] (🏳️‍🌈)
-    /// let path = PathBuf::from("test_files/unicode/emoji-zwj-sequences.txt");
+    /// let path = PathBuf::from("test_files/tables/emoji-zwj-sequences.txt");
     /// let paths = vec![path];
     ///
     /// let table = EmojiTable::from_files(&paths).unwrap();
@@ -71,12 +72,12 @@ impl EmojiTable {
     ///
     /// let rainbow_entry = (vec![EmojiZwjSequence], Some(String::from("rainbow flag")));
     ///
-    /// assert!(table.get_map().contains_key(&rainbow));
-    /// assert!(table.get_map().contains_key(&rainbow_no_fe0f));
+    /// assert!(table.as_ref().contains_key(&rainbow));
+    /// assert!(table.as_ref().contains_key(&rainbow_no_fe0f));
     ///
     /// assert_eq!(*table.get(&rainbow).unwrap(), rainbow_entry);
     /// ```
-    pub fn from_files(paths: &[PathBuf]) -> Result<EmojiTable, Error> {
+    pub fn from_files<P: AsRef<Path>>(paths: &[P]) -> Result<EmojiTable, Error> {
         let mut table = EmojiTable::new();
 
         for path in paths {
@@ -102,7 +103,7 @@ impl EmojiTable {
     ///
     /// let mut table = EmojiTable::new();
     ///
-    /// let path = &PathBuf::from("test_files/unicode/emoji-zwj-sequences.txt");
+    /// let path = &PathBuf::from("test_files/tables/emoji-zwj-sequences.txt");
     /// table.expand(path).unwrap();
     ///
     /// let rainbow = vec![0x1f3f3, 0xfe0f, 0x200d, 0x1f308];
@@ -115,7 +116,7 @@ impl EmojiTable {
     ///
     /// assert_eq!(*table.get(&rainbow).unwrap(), rainbow_entry);
     /// ```
-    pub fn expand(&mut self, path: &Path) -> Result<(), Error> {
+    pub fn expand<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
         lazy_static! {
             static ref HEX_SEQUENCE: Regex = Regex::new(r"[a-fA-F0-9]+").unwrap();
             static ref RANGE: Regex = Regex::new(r"([a-fA-F0-9]+)\.\.([a-fA-F0-9]+)").unwrap();
@@ -218,6 +219,7 @@ impl EmojiTable {
         EmojiTable(out_table)
     }
 
+    /// Parses a regular emoji codepoint sequence and adds it including a description
     fn parse_sequence(&self,
                       emoji: &str,
                       kind: EmojiKind,
@@ -231,7 +233,7 @@ impl EmojiTable {
         let code_sequences: Vec<u32> = matches
             .map(|sequence| sequence.as_str().to_string())
             .map(|sequence| u32::from_str_radix(&sequence, 16).unwrap_or_default())
-            .filter(|codepoint| codepoint > &0)
+            .filter(|codepoint| *codepoint > 0)
             .collect();
 
         // Reallocation would be necessary anyway (because of the extension of the vector)
@@ -249,6 +251,9 @@ impl EmojiTable {
 
         let existing_description = self.get_description(&code_sequences);
 
+        // FIXME: There seem to be various styles for comments.
+        //        For example, the official tables have descriptions come last...
+        //        The best solution would probably to use CLDR...
         if let Some(description) = description {
             let description = description.split('#').next().unwrap_or_default().trim();
             let description = String::from(description);
@@ -258,11 +263,8 @@ impl EmojiTable {
         }
     }
 
-    pub fn get_map(&self) -> &HashMap<EmojiTableKey, EmojiTableEntry> {
-        &self.0
-    }
-
     /// Inserts a new key-entry pair into the table and returns the last entry if there was one.
+    /// This is simply passed on to the internal `HashMap`.
     pub fn insert(&mut self, key: EmojiTableKey, entry: EmojiTableEntry) -> Option<EmojiTableEntry> {
         self.0.insert(key, entry)
     }

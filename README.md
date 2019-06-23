@@ -35,7 +35,7 @@ _Currently under development_.
     - `ISC (1): rdrand`
     - `MIT (33): rctree, wild, harfbuzz_rs, atty, scoped_threadpool, servo-fontconfig-sys, oxipng, rgb, redox_users, termion, slab, textwrap, miniz_oxide, phf, synstructure, ansi_term, redox_syscall, harfbuzz-sys, typed-arena, argon2rs, redox_termios, libflate, generic-array, float-cmp, phf_shared, build_const, expat-sys, memoffset, image, clap, inflate, matches, strsim`
     - `(MIT AND Zlib), OR Apache-2.0 AND Zlib (2): cloudflare-zlib-sys, cloudflare-zlib`
-    - `(MIT) OR Apache-2.0 (17): failure, opaque-debug, crc32fast, libc, rand_jitter, sha2, crc, digest, block-buffer, byte-tools, blake2-rfc, serde, hex, numtoa, failure_derive, block-padding, dirs`
+    - `(MIT) OR Apache-2.0 (17): failure, opaque-debug, crc32fast, libc, rand_jitter, sha2, crc, digest, block-buffer, byte-tools, blake2-rfc, serde, hex, numtoa, failure_derive, block-padding, dirs, tempfile`
     - `(MIT)/Unlicense (8): winapi-util, same-file, walkdir, utf8-ranges, csv-core, aho-corasick, csv, memchr`
     - `MPL-2.0 (4): simplecss, resvg, usvg, dwrote`
     - `N/A* (1): fuchsia-cprng`

@@ -16,6 +16,7 @@
 //! This is the main module for the actual emoji processing.
 
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::fs::create_dir;
 use std::path::PathBuf;
 
@@ -29,11 +30,14 @@ use crate::emoji::Emoji;
 /// Usually an `EmojiBuilder` will build an emoji font in one (or more) specific format(s), but
 /// it might be used in other contexts as well.
 pub trait EmojiBuilder {
-    type Err;
+    type Err: Debug;
     type PreparedEmoji;
 
-    /// Instantiates a new `EmojiBuilder` before using it.
-    /// This will set up different settings and specify the working directory for the builder.
+    /// Initializes a new `EmojiBuilder` before using it.
+    /// This can set up different settings and specify the working directory for the builder.
+    ///
+    /// The command line arguments from `clap` that have been specified by `sub_command` are
+    /// passed here.
     fn new(
         build_dir: PathBuf,
         verbose: bool,
@@ -43,7 +47,7 @@ pub trait EmojiBuilder {
     /// Called when the builder is supposed to stop its work.
     ///
     /// The difference to the `Drop` trait is that
-    /// this might be called before the builder is dropped and an error may be returned.
+    /// this might be called before the builder is actually dropped and an error may be returned.
     fn finish(&self) -> Result<(), Self::Err> {
         Ok(())
     }
@@ -52,7 +56,7 @@ pub trait EmojiBuilder {
     /// it would if an empty directory was used.
     ///
     /// This reset might be done in a way that retains default files.
-    /// The default implementation deletes the whole directory and recreates it by a new one
+    /// The default implementation deletes the whole directory and recreates it as a new one
     fn reset(&self, build_dir: PathBuf) -> Result<(), ResetError<Self::Err>> {
         let parent = build_dir.parent();
         match parent {
@@ -69,7 +73,9 @@ pub trait EmojiBuilder {
 
     /// Preprocess a single emoji which will be later used to create the emoji set.
     ///
-    /// This function needs to be thread-safe as the preparation might be done in parallel/concurrency.
+    /// This function needs to be thread-safe as the preparation might be done in parallel/concurrently.
+    /// It may assume that either `prepare` hasn't been called yet for this Emoji or that either
+    /// `undo` or `reset` have been called.
     fn prepare(&self, emoji: &Emoji) -> Result<Self::PreparedEmoji, Self::Err>;
 
     /// Builds the emoji set with the given emojis and sends the output to the specified file.
@@ -81,6 +87,22 @@ pub trait EmojiBuilder {
         emojis: HashMap<&Emoji, Result<Self::PreparedEmoji, Self::Err>>,
         output_file: PathBuf,
     ) -> Result<(), Self::Err>;
+
+    /// Does the exact opposite to `prepare`, i.e. it assumes that the emoji
+    /// has already been prepared and it undoes that operation (e.g. by deleting the file).
+    ///
+    /// If `prepare` isn't written under the assumption that `prepare` hasn't been called yet,
+    /// `undo` may also do nothing.
+    ///
+    /// This function can be used to do for example speculative rendering, i.e. the emojis get
+    /// prepared before the user has initiated the build and "approved" them.
+    fn undo(
+        &self,
+        emoji: &Emoji,
+        prepared: Result<Self::PreparedEmoji, Self::Err>,
+    ) -> Result<(), Self::Err> {
+        Ok(())
+    }
 
     /// Lets the builder define its own set of command line arguments.
     /// It is required to be able to at least call the builder from the CLI

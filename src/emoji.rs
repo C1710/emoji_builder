@@ -18,6 +18,7 @@
 use std::fmt::{Display, Formatter};
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::ops::{Range, RangeInclusive};
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -25,6 +26,7 @@ use itertools::Itertools;
 use regex::{CaptureMatches, Regex};
 
 use crate::emoji::EmojiError::NotAFileName;
+use crate::emoji::EmojiKind::EmojiFlagSequence;
 use crate::emoji_tables::{EmojiTable, EmojiTableError};
 use crate::emoji_tables::EmojiTableError::KeyNotFound;
 
@@ -38,10 +40,12 @@ pub struct Emoji {
     /// This is particularly useful for error messages.
     pub name: Option<String>,
     /// The `EmojiKind`s that are available for this code sequence.
-    pub kind: Option<Vec<EmojiKind>>,
+    pub kinds: Option<Vec<EmojiKind>>,
     /// The path of the source SVG file for this emoji.
     ///
     /// This can be used in EmojiBuilders to e.g. render an emoji.
+    // TODO: Maybe it would be wiser to use something else than the path to the file here.
+    //       Especially, if this should ever be ported to WASM it would be useful to not use paths.
     pub svg_path: Option<PathBuf>,
 }
 
@@ -76,7 +80,7 @@ impl Emoji {
     /// assert_eq!(party_face, Emoji {
     ///     sequence: vec![0x1f973],
     ///     name: None,
-    ///     kind: None,
+    ///     kinds: None,
     ///     svg_path: None
     /// });
     /// ```
@@ -94,7 +98,7 @@ impl Emoji {
     /// assert_eq!(thinking, Emoji {
     ///     sequence: vec![0x1f914],
     ///     name: Some(String::from("Thinking Face")),
-    ///     kind: Some(vec![EmojiKind::Emoji]),
+    ///     kinds: Some(vec![EmojiKind::Emoji]),
     ///     svg_path: None
     /// });
     /// ```
@@ -125,7 +129,7 @@ impl Emoji {
     /// assert_eq!(emoji, Emoji {
     ///     sequence: seq,
     ///     name: None,
-    ///     kind: None,
+    ///     kinds: None,
     ///     svg_path: None
     /// });
     /// ```
@@ -145,14 +149,16 @@ impl Emoji {
         }
     }
 
-    const FLAG_OFFSET: u32 = 0x1f1a5;
-    const REGIONAL_OFFSET: u32 = 0xe0020;
+    const FLAG_OFFSET: u32 = 0x1f185;
+    const REGIONAL_OFFSET: u32 = 0xe0000;
     const CANCEL_TAG: u32 = 0xe007f;
     const BLACK_FLAG: u32 = 0x1f3f4;
+
 
     /// Creates an emoji from a flag sequence given in their
     /// ISO-3166-1 representation or a subdivision given in their ISO-3166-2 representation
     /// (i.e. with a dash in between).
+    ///
     /// Everything after the first dot (`.`) will be ignored (usually file extensions)
     /// # Examples
     /// ```
@@ -180,13 +186,26 @@ impl Emoji {
     ///
     /// assert_eq!(emoji.unwrap(), Emoji::from_u32_sequence(sequence, &None).unwrap());
     /// ```
+    ///
+    /// ```
+    /// use emoji_builder::emoji::Emoji;
+    ///
+    /// let salzburg = "at-5.boo";
+    ///
+    /// // https://emojipedia.org/flag-for-salzburg-at5/
+    /// let sequence = vec![0x1f3f4, 0xe0061, 0xe0074, 0xe0035, 0xe007f];
+    ///
+    /// let emoji = Emoji::from_flag(salzburg, &None);
+    ///
+    /// assert_eq!(emoji.unwrap(), Emoji::from_u32_sequence(sequence, &None).unwrap());
+    /// ```
     pub fn from_flag(flag: &str, table: &Option<EmojiTable>) -> Result<Emoji, EmojiError> {
         lazy_static! {
-            static ref COUNTRY_FLAG: Regex = Regex::new(r"^[A-Z]+$").unwrap();
-            static ref REGION_FLAG: Regex = Regex::new(r"^([A-Z]+)-([A-Z]+)$").unwrap();
+            static ref COUNTRY_FLAG: Regex = Regex::new(r"^[a-z]+$").unwrap();
+            static ref REGION_FLAG: Regex = Regex::new(r"^([a-z]+)-([a-z0-9]+)$").unwrap();
         }
         // Strip any file extensions
-        let flag = flag.split('.').next().unwrap().trim().to_uppercase();
+        let flag = flag.split('.').next().unwrap().trim().to_lowercase();
 
         if COUNTRY_FLAG.is_match(&flag) {
             // ISO-3166-1 country code (DE)
@@ -197,7 +216,7 @@ impl Emoji {
                 .collect();
             let mut emoji = Emoji::from_u32_sequence(codepoints, table);
             if let Ok(emoji) = &mut emoji {
-                if let Some(kind) = &mut emoji.kind {
+                if let Some(kind) = &mut emoji.kinds {
                     kind.push(EmojiKind::EmojiFlagSequence);
                 }
             };
@@ -236,12 +255,12 @@ impl Emoji {
     /// let path = PathBuf::from(path_str);
     /// let sequence = vec![0x1f914];
     ///
-    /// let emoji = Emoji::from_file(path.clone(), &None, false).unwrap();
+    /// let emoji = Emoji::from_path(path.clone(), &None, false).unwrap();
     ///
     /// assert_eq!(emoji, Emoji {
     ///     sequence,
     ///     name: None,
-    ///     kind: None,
+    ///     kinds: None,
     ///     svg_path: Some(path.into())
     /// })
     /// ```
@@ -255,16 +274,16 @@ impl Emoji {
     /// let path = PathBuf::from(path_str);
     /// let sequence = vec![0x1f1e9, 0x1f1ea];
     ///
-    /// let emoji = Emoji::from_file(path.clone(), &None, true).unwrap();
+    /// let emoji = Emoji::from_path(path.clone(), &None, true).unwrap();
     ///
     /// assert_eq!(emoji, Emoji {
     ///     sequence,
     ///     name: None,
-    ///     kind: None,
+    ///     kinds: None,
     ///     svg_path: Some(path)
     /// })
     /// ```
-    pub fn from_file(
+    pub fn from_path(
         file: PathBuf,
         table: &Option<EmojiTable>,
         flag: bool
@@ -307,7 +326,7 @@ impl Emoji {
     /// assert_eq!(emoji, Emoji {
     ///     sequence,
     ///     name: None,
-    ///     kind: Some(kind),
+    ///     kinds: Some(kind),
     ///     svg_path: None
     /// });
     /// ```
@@ -315,7 +334,7 @@ impl Emoji {
         let seq = &self.sequence;
         match &table.get(seq) {
             Some((kind, _)) => {
-                self.kind = Some(kind.clone());
+                self.kinds = Some(kind.clone());
                 Ok(())
             }
             None => Err(KeyNotFound(seq.clone())),
@@ -397,7 +416,7 @@ impl Emoji {
     /// assert_eq!(emoji, Emoji {
     ///     sequence,
     ///     name: Some(name),
-    ///     kind: None,
+    ///     kinds: None,
     ///     svg_path: None
     /// });
     /// ```
@@ -414,7 +433,116 @@ impl Emoji {
 
     /// Assigns a given path to the Emoji
     pub fn set_path(&mut self, path: PathBuf) {
-        self.svg_path = Some(path.into());
+        self.svg_path = Some(path);
+    }
+
+    const COUNTRY_RANGE: RangeInclusive<u32> = 0x1f1e6..=0x1f1ff;
+    const REGION_LETTERS: RangeInclusive<u32> = 0xe0061..=0xe007a;
+    const REGION_DIGITS: RangeInclusive<u32> = 0xe0030..=0xe0039;
+
+    /// Returns the ISO 3166-1/2 code in upper case if this emoji represents a flag sequence.
+    /// Whether it is a flag is decided by its structure.
+    /// # Examples
+    /// ```
+    /// use emoji_builder::emoji::Emoji;
+    ///
+    /// let germany = Emoji::from_flag("de", None);
+    ///
+    /// assert_eq!(germany.get_flag_name().unwrap(), "DE");
+    /// ```
+    ///
+    /// ```
+    /// use emoji_builder::emoji::Emoji;
+    ///
+    /// let thinking = Emoji::from_u32_sequence(vec![0x1f914], None);
+    ///
+    /// assert_eq!(thinking.get_flag_name(), None);
+    /// ```
+    ///
+    /// ```
+    /// use emoji_builder::emoji::Emoji;
+    ///
+    /// let salzburg = Emoji::from_flag("AT-5", None);
+    ///
+    /// assert_eq!(salzburg.unwrap(), "AT-5");
+    /// ```
+    pub fn get_flag_name(&self) -> Option<String> {
+        self.get_country_name().or_else(|| self.get_subdiv_name())
+    }
+
+    fn get_country_name(&self) -> Option<String> {
+        if self.is_country_flag() {
+            let country: String = self.sequence.iter()
+                .map(|codepoint| codepoint - Self::FLAG_OFFSET)
+                // We're in the ASCII range now
+                .map(|codepoint| codepoint as u8)
+                .map(|codepoint| codepoint as char)
+                .collect();
+            Some(country.to_uppercase())
+        } else {
+            None
+        }
+    }
+
+    /// Returns the ISO 3166-2 code (if this is a subdivision flag)
+    fn get_subdiv_name(&self) -> Option<String> {
+        if self.is_subdiv_flag() {
+            let seq = &self.sequence;
+            let last_index = seq.len() - 1;
+            let country = seq[1..3].iter()
+                .map(|codepoint| codepoint - Self::REGIONAL_OFFSET)
+                // We're back to ASCII
+                .map(|codepoint| (codepoint as u8) as char);
+            let subdiv = seq[3..last_index].iter()
+                .map(|codepoint| codepoint - Self::REGIONAL_OFFSET)
+                // We're back to ASCII
+                .map(|codepoint| (codepoint as u8) as char);
+            let name: String = country.chain(vec!['-']).chain(subdiv).collect();
+            Some(name.to_uppercase())
+        } else {
+            None
+        }
+    }
+
+    /// Checks whether this emoji represents a flag by either formal reasons
+    /// (i.e. it includes the kind `EmojiFlagSequence`) or if its codepoints are
+    /// valid country or subdivision flags
+    /// # Examples
+    /// ```
+    /// use emoji_builder::emoji::Emoji;
+    ///
+    /// let germany = Emoji::from_flag("DE", None).unwrap();
+    ///
+    /// assert!(germany.is_flag());
+    /// ```
+    pub fn is_flag(&self) -> bool {
+        let empty = vec![];
+        let kinds = match &self.kinds {
+            Some(kinds) => kinds,
+            None => &empty
+        };
+        kinds.contains(&EmojiFlagSequence)
+            || self.is_country_flag()
+            || self.is_subdiv_flag()
+    }
+
+    /// Checks whether this is a country's flag (e.g. DE, EU, etc.)
+    pub fn is_country_flag(&self) -> bool {
+        !self.sequence.is_empty()
+            && self.sequence.iter()
+            .all(|codepoint| Self::COUNTRY_RANGE.contains(codepoint))
+    }
+
+    /// Checks whether this is a subdivision flag (e.g. DE-NW, AT-5, US-CA, ...)
+    pub fn is_subdiv_flag(&self) -> bool {
+        let seq = &self.sequence;
+        let last_index = seq.len() - 1;
+        seq.len() >= 5
+            && seq[0] == Self::BLACK_FLAG
+            && *seq.last().unwrap_or(&0u32) == Self::CANCEL_TAG
+            && seq[1..last_index].iter()
+            .all(|codepoint| Self::REGION_LETTERS.contains(codepoint) ||
+                Self::REGION_DIGITS.contains(codepoint))
     }
 }
 
@@ -429,7 +557,7 @@ impl From<Vec<u32>> for Emoji {
         Emoji {
             sequence,
             name: None,
-            kind: None,
+            kinds: None,
             svg_path: None,
         }
     }
@@ -460,6 +588,7 @@ impl Hash for Emoji {
 }
 
 impl PartialEq<Emoji> for Emoji {
+    /// Compares two Emojis by their code sequence
     fn eq(&self, other: &Emoji) -> bool {
         self.sequence == other.sequence
     }
@@ -500,6 +629,13 @@ impl FromStr for EmojiKind {
 /// A very simple wrapper that indicates, that a given string representation of an Emoji kind did
 /// not match any of the default cases.
 /// If you don't care about that, you can simply ignore it.
+/// # Examples
+/// ```
+/// use emoji_builder::emoji::EmojiKind;
+/// let kind = EmojiKind::from_str(":D");
+/// assert!(kind.is_err());
+/// assert_eq!(EmojiKind::Other(String::from(":D")), kind.err().unwrap());
+/// ```
 pub struct UnknownEmojiKind(EmojiKind);
 
 impl UnknownEmojiKind {
@@ -515,9 +651,50 @@ impl From<UnknownEmojiKind> for EmojiKind {
 }
 
 impl Display for Emoji {
+    /// Tries to show the appropriate (if possible human-understandable) name for this emoji.
+    /// If the name attribute is not `None`, it will output that one.
+    /// If not it will either output the flag sequence (e.g. `Flag EU`) or the code sequence
+    /// in square brackets (e.g. `[1F3F3-FE0F-200D-1F308]`).
+    /// # Examples
+    /// ```
+    ///
+    /// use emoji_builder::emoji::Emoji;
+    ///
+    /// let thinking = Emoji::from_u32_sequence(vec![0x1f914], None);
+    ///
+    /// assert_eq!("[1F914]", format!("{}", thinking));
+    /// ```
+    ///
+    /// ```
+    ///
+    /// use emoji_builder::emoji::Emoji;
+    ///
+    /// let rainbow = Emoji::from_u32_sequence(vec![0x1f3f3, 0xfe0f, 0x200d, 0x1f308], None);
+    ///
+    /// assert_eq!("[1F3F3-FE0F-200D-1F308]", format!("{}", rainbow));
+    /// ```
+    ///
+    /// ```
+    /// use emoji_builder::emoji::Emoji;
+    ///
+    /// let nrw = Emoji::from_flag("de-nw", None).unwrap();
+    ///
+    /// assert_eq!("Flag DE-NW", format!("{}", nrw));
+    /// ```
+    ///
+    /// ```
+    /// use emoji_builder::emoji::Emoji;
+    ///
+    /// let mut party = Emoji::from_u32_sequence(vec![0x1f973], None).unwrap();
+    /// party.name = Some(String::from("Party face"));
+    ///
+    /// assert_eq!("Party face", format!("{}", party));
+    /// ```
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         if let Some(name) = &self.name {
             write!(f, "{}", name)
+        } else if let Some(name) = self.get_flag_name() {
+            write!(f, "Flag {}", name)
         } else {
             write!(f, "[{}]", self.sequence.iter()
                 .map(|codepoint| format!("{:X}", codepoint))

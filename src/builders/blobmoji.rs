@@ -35,12 +35,16 @@ use itertools::Itertools;
 use oxipng::{optimize, optimize_from_memory, PngResult};
 use oxipng::internal_tests::Headers::Safe;
 use png::HasParameters;
+use rayon::iter::IntoParallelRefIterator;
+use rayon::iter::ParallelIterator;
 use resvg::backend_raqote;
 use resvg::FitTo;
 use resvg::prelude::*;
+use sha2::{Digest, Sha256};
+use sha2::digest::generic_array::GenericArray;
 
 use crate::builder::EmojiBuilder;
-use crate::changes::FileHashes;
+use crate::changes::{CheckError, FileHashes};
 use crate::emoji::Emoji;
 
 #[allow(dead_code)]
@@ -55,7 +59,7 @@ const HASHES: &str = "hashes.csv";
 
 impl EmojiBuilder for Blobmoji {
     type Err = ();
-    type PreparedEmoji = PathBuf;
+    type PreparedEmoji = (PathBuf, Result<GenericArray<u8, <Sha256 as Digest>::OutputSize>, CheckError>);
 
     fn new(
         build_path: PathBuf,
@@ -63,10 +67,20 @@ impl EmojiBuilder for Blobmoji {
         _arguments: Option<&ArgMatches>,
     ) -> Result<Box<Self>, Self::Err> {
         let hash_path = build_path.join(String::from(HASHES));
+        let hashes = FileHashes::from_path(hash_path.as_path());
+        let hashes = match hashes {
+            Ok(hashes) => hashes,
+            Err(error) => {
+                if verbose {
+                    eprintln!("Couldn't load hash values: {:?}", error);
+                }
+                FileHashes::default()
+            }
+        };
         let builder = Box::new(Blobmoji {
             build_path,
             name: None,
-            hashes: FileHashes::from_path(hash_path.as_path()).unwrap_or_default(),
+            hashes,
             verbose,
         });
         Ok(builder)
@@ -77,8 +91,18 @@ impl EmojiBuilder for Blobmoji {
             println!("Preparing {}", emoji);
         }
 
-        if !self.hashes.check(emoji).unwrap_or(false) {
+        let path = self.build_path.join(PathBuf::from(Blobmoji::generate_filename(emoji)));
+
+        if self.verbose {
+            if let Err(err) = self.hashes.check(emoji) {
+                eprintln!("Hash of an emoji ({}) could not be checked: {:?}", emoji, err);
+            }
+        }
+
+        if (!self.hashes.check(emoji).unwrap_or(false)) || (!path.exists()) {
             if let Some(rendered) = self.render_svg(emoji) {
+                let fit_to = rendered.1;
+                let rendered = rendered.0;
                 let quantized = match self.quantize_png(&rendered) {
                     Some(quantized) => quantized,
                     None => &rendered,
@@ -89,9 +113,11 @@ impl EmojiBuilder for Blobmoji {
                     Err(_) => Vec::from(quantized),
                 };
 
-                self.write_png(emoji, optimized);
+                self.write_png(emoji, optimized, fit_to);
 
-                Ok(Blobmoji::generate_filename(emoji).into())
+                let hash = FileHashes::hash(emoji);
+
+                Ok((path, hash))
             } else {
                 eprintln!("Couldn't render Emoji {}", emoji);
                 Err(())
@@ -110,6 +136,31 @@ impl EmojiBuilder for Blobmoji {
         emojis: HashMap<&Emoji, Result<Self::PreparedEmoji, Self::Err>>,
         output_file: PathBuf,
     ) -> Result<(), Self::Err> {
+        // Save the new hashes
+
+        let hash_errors = emojis.iter()
+            .filter_map(|(emoji, result)| match result {
+                Ok((_, hash)) => Some((emoji, hash)),
+                Err(_) => None
+            })
+            .filter_map(|(emoji, hash)|
+                match hash {
+                    Ok(_) => None,
+                    Err(error) => Some((emoji, error))
+                })
+            .collect_vec();
+
+
+        let hash_error = self.hashes.write_to_path(self.build_path.join(HASHES));
+
+        for (emoji, err) in hash_errors {
+            eprintln!("Error in updating a hash value for emoji {}: {:?}", emoji, err);
+        }
+        if let Err(err) = hash_error {
+            eprintln!("Error in writing the new hash values: {:?}\n\
+            All emojis will be re-rendered the next time.", err);
+        }
+
         // Currently the only task is to render the emojis...
         Ok(())
     }
@@ -124,39 +175,67 @@ const IMG_WIDTH: u32 = 128;
 const HEIGHT: u32 = 128;
 
 impl Blobmoji {
-    fn render_svg(&self, emoji: &Emoji) -> Option<Vec<u8>> {
+    fn render_svg(&self, emoji: &Emoji) -> Option<(Vec<u8>, FitTo)> {
         if let Some(svg_path) = &emoji.svg_path {
             let mut opt = resvg::Options::default();
             let path = PathBuf::from(&svg_path.as_os_str());
             opt.usvg.path = Some(path);
-            opt.fit_to = FitTo::Width(IMG_WIDTH);
+            // Just as a fallback. On Windows and Mac OS it will use Comic Sans
+            // which is pretty close to Comic Neue, which is used in Blobmoji
+            // TODO: Maybe make this an argument...
+            opt.usvg.font_family = String::from("cursive");
 
+            opt.fit_to = FitTo::Width(IMG_WIDTH);
             let tree = usvg::Tree::from_file(svg_path, &opt.usvg);
+
             if let Ok(tree) = tree {
-                let mut img = backend_raqote::render_to_image(&tree, &opt);
+                let size = tree.svg_node().size.to_screen_size();
+                opt.fit_to = if size.height() > size.width() {
+                    FitTo::Height(HEIGHT)
+                } else {
+                    FitTo::Width(IMG_WIDTH)
+                };
+
+                let img = backend_raqote::render_to_image(&tree, &opt);
                 if let Some(img) = img {
                     let mut data = img.into_vec();
                     let data = as_u8_slice(&mut data);
                     bgra_to_rgba(data);
-                    Some(Vec::from(data))
+                    Some((Vec::from(data), opt.fit_to))
                 } else {
+                    eprintln!("Failed to render {}", emoji);
                     None
                 }
             } else {
+                let err = tree.err().unwrap();
+                eprintln!("Error in loading the SVG file for {}: {:?}", emoji, err);
                 None
             }
         } else {
+            eprintln!("No file available for {}", emoji);
             None
         }
     }
 
 
-    fn write_png(&self, emoji: &Emoji, image: Vec<u8>) {
+    fn write_png(&self, emoji: &Emoji, image: Vec<u8>, fit_to: FitTo) {
         let filename = Blobmoji::generate_filename(&emoji);
         let path = self.build_path.join(&PathBuf::from(filename));
         let file = File::create(path);
 
-        let image = Blobmoji::enlarge_width(&image);
+        let (width, height) = match fit_to {
+            FitTo::Width(width) => (Some(width), None),
+            FitTo::Height(height) => (None, Some(height)),
+            _ => panic!("fit_to needs to be either Height or Width")
+        };
+
+        let image = Blobmoji::enlarge_to(
+            &image,
+            width,
+            height,
+            WIDTH,
+            HEIGHT,
+        );
 
         if let Ok(file) = file {
             let writer = &mut BufWriter::new(file);
@@ -183,21 +262,16 @@ impl Blobmoji {
         optimize_from_memory(img, &opt)
     }
 
-    /// The output images are supposed to be a bit wider than the square images.
-    /// This function currently copies the whole image which is kinda inefficient.
-    fn enlarge_width(content: &[u8]) -> Vec<u8> {
-        let content_height = content.len() as u32 / (IMG_WIDTH * 4);
-        Blobmoji::enlarge_by(content, IMG_WIDTH, content_height, WIDTH - IMG_WIDTH, 0)
-    }
-
     const EMPTY_PIXEL: [u8; 4] = [0; 4];
 
     /// Adds a transparent area around an image and puts it in the center
-    /// If a delta value is odd, the image will be positioned 1 pixel left of the center
+    /// If a delta value is odd, the image will be positioned 1 pixel left of the center.
+    ///
+    /// Will panic, if neither source width, nor source height is given
     fn enlarge_by(
         content: &[u8],
-        src_width: u32,
-        src_height: u32,
+        src_width: Option<u32>,
+        src_height: Option<u32>,
         d_width: u32,
         d_height: u32,
     ) -> Vec<u8> {
@@ -211,6 +285,15 @@ impl Blobmoji {
         // |-------------|
         // |  pad_vert   |
         // |             |
+
+        let pixels = content.len() as u32 / 4;
+
+        let (src_width, src_height) = match (src_width, src_height) {
+            (Some(width), Some(height)) => (width, height),
+            (Some(width), None) => (width, pixels / width),
+            (None, Some(height)) => (pixels / height, height),
+            (None, None) => panic!("No dimensions have been given"),
+        };
 
         // The padding will be computed width the smaller side (if one is smaller than the other)
         // If d % 2 = 1, round it down by 1,
@@ -244,11 +327,36 @@ impl Blobmoji {
         }
         image.extend_from_slice(&pad_vertical);
 
+        // If necessary, add an extra line at the bottom.
         if d_height % 2 != 0 {
-            image.extend_from_slice(&vec![0; target_width as usize]);
+            image.extend_from_slice(&vec![0; target_width as usize * 4]);
         }
 
         image
+    }
+
+    fn enlarge_to(
+        content: &[u8],
+        src_width: Option<u32>,
+        src_height: Option<u32>,
+        target_width: u32,
+        target_height: u32,
+    ) -> Vec<u8> {
+        let pixels = content.len() as u32 / 4;
+
+        let (width, height) = match (src_width, src_height) {
+            (None, None) => panic!("No dimensions have been given"),
+            (None, Some(height)) => (pixels / height, height),
+            (Some(width), None) => (width, pixels / width),
+            (Some(width), Some(height)) => (width, height)
+        };
+
+        assert!(target_width >= width);
+        assert!(target_height >= height);
+
+        let d_width = target_width.saturating_sub(width);
+        let d_height = target_height.saturating_sub(height);
+        Self::enlarge_by(content, src_width, src_height, d_width, d_height)
     }
 
     fn generate_filename(emoji: &Emoji) -> String {

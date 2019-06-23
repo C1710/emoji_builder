@@ -73,7 +73,8 @@ fn main() {
         })
         .map(std::fs::DirEntry::path)
         .filter(|path| path.is_file())
-        .map(|path| Emoji::from_file(path, &table, false));
+        .map(|path| Emoji::from_path(path, &table, false));
+
     let flags = flag_paths
         .par_iter()
         .filter(|path| path.is_ok())
@@ -83,7 +84,7 @@ fn main() {
         })
         .map(std::fs::DirEntry::path)
         .filter(|path| path.is_file())
-        .map(|path| Emoji::from_file(path, &table, true));
+        .map(|path| Emoji::from_path(path, &table, true));
 
     let emojis: Vec<Emoji> = emojis.chain(flags)
         .filter(std::result::Result::is_ok)
@@ -99,7 +100,7 @@ fn main() {
     let prepared: HashMap<&Emoji, _> = emojis.par_iter()
         .map(|emoji| (emoji, builder.as_ref().prepare(emoji)))
         .collect();
-    builder.as_mut().build(prepared, output);
+    builder.as_mut().build(prepared, output).unwrap();
 }
 
 struct BuilderArguments {

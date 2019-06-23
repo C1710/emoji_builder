@@ -24,7 +24,7 @@ use crate::emoji_tables;
 use crate::emoji_tables::EmojiTable;
 
 const SVG_PATH: &str = "test_files/svg";
-const TABLES_PATH: &str = "test_files/unicode";
+const TABLES_PATH: &str = "test_files/tables";
 
 // data - data-duplicates + zwj sequences w/o fe0f + 2*(zwj sequences with fe0f)
 const TABLE_ENTRIES: usize = 76 - 21 + 1 + 2 * (9);
@@ -58,7 +58,7 @@ fn emoji_build() {
         .map(|entry| entry.path())
         .filter(|entry| entry.extension().is_some())
         .filter(|entry| entry.extension().unwrap() == "svg")
-        .map(|path| Emoji::from_file(path, &table, false).unwrap())
+        .map(|path| Emoji::from_path(path, &table, false).unwrap())
         .collect();
 
     assert_eq!(emojis.len(), EMOJIS);
@@ -71,63 +71,63 @@ fn emoji_build() {
     let rainbow = Emoji {
         sequence: vec![0x1f3f3, 0x200d, 0x1f308],
         name: Some(String::from("rainbow flag")),
-        kind: Some(vec![EmojiZwjSequence]),
+        kinds: Some(vec![EmojiZwjSequence]),
         svg_path: None,
     };
 
     let rainbow_comp = emojis.get(&rainbow).unwrap();
 
     assert_eq!(rainbow_comp.name, rainbow.name);
-    assert_eq!(rainbow_comp.kind, rainbow.kind);
+    assert_eq!(rainbow_comp.kinds, rainbow.kinds);
 }
 
 fn build_emojis() -> HashSet<Emoji> {
     let rainbow = Emoji {
         sequence: vec![0x1f3f3, 0x200d, 0x1f308],
         name: Some(String::from("rainbow flag")),
-        kind: Some(vec![EmojiZwjSequence]),
+        kinds: Some(vec![EmojiZwjSequence]),
         svg_path: None,
     };
 
     let transgender = Emoji {
         sequence: vec![0x1f3f3, 0xfe0f, 0x200d, 0x26a7],
         name: None,
-        kind: None,
+        kinds: None,
         svg_path: None,
     };
 
     let otter = Emoji {
         sequence: vec![0x1f9a6],
         name: None,
-        kind: None,
+        kinds: None,
         svg_path: None,
     };
 
     let skunk = Emoji {
         sequence: vec![0x1f9a8],
         name: None,
-        kind: None,
+        kinds: None,
         svg_path: None,
     };
 
     let falafel = Emoji {
         sequence: vec![0x1f9c6],
         name: None,
-        kind: None,
+        kinds: None,
         svg_path: None,
     };
 
     let diving_mask = Emoji {
         sequence: vec![0x1f93f],
         name: Some(String::from("diving mask")),
-        kind: None,
+        kinds: None,
         svg_path: None,
     };
 
     let diya = Emoji {
         sequence: vec![0x1fa94],
         name: None,
-        kind: None,
+        kinds: None,
         svg_path: None,
     };
 
