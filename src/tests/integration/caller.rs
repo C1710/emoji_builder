@@ -112,6 +112,7 @@ fn run_with_test_files<T: EmojiBuilder>() -> TestResult<T> {
 }
 
 #[test]
+#[ignore]
 fn test_dummy() {
     let result = run_with_test_files::<DummyBuilder>();
     // First of all, have there been any errors?

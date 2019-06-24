@@ -17,10 +17,10 @@
 use std::collections::HashSet;
 use std::fs;
 use std::iter::FromIterator;
+use std::path::PathBuf;
 
 use crate::emoji::Emoji;
 use crate::emoji::EmojiKind::EmojiZwjSequence;
-use crate::emoji_tables;
 use crate::emoji_tables::EmojiTable;
 
 const SVG_PATH: &str = "test_files/svg";
@@ -40,6 +40,8 @@ fn emoji_build() {
         .filter(std::result::Result::is_ok)
         .map(std::result::Result::unwrap)
         .map(|entry| entry.path())
+        // There's a license file in that directory. We don't want to parse that one :P
+        .filter(|path: &PathBuf| path.extension().unwrap_or_default() == "txt")
         .collect();
 
     assert_eq!(table_paths.len(), TABLES);

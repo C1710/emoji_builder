@@ -35,7 +35,7 @@ fn test_hashing() {
     assert!(!empty_hashes.check(&emoji).unwrap());
 
     let hash = FileHashes::hash(&emoji).unwrap();
-    empty_hashes.update(&emoji, &hash).unwrap();
+    empty_hashes.update(&emoji, &hash).unwrap_or_default();
     let filled_hashes = empty_hashes;
 
     // Now there's something in it. Hopefully it's the correct emoji

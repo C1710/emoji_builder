@@ -26,7 +26,7 @@ use itertools::Itertools;
 use regex::{CaptureMatches, Regex};
 
 use crate::emoji::EmojiError::NotAFileName;
-use crate::emoji::EmojiKind::EmojiFlagSequence;
+use crate::emoji::EmojiKind::{EmojiFlagSequence, EmojiKeycapSequence};
 use crate::emoji_tables::{EmojiTable, EmojiTableError};
 use crate::emoji_tables::EmojiTableError::KeyNotFound;
 
@@ -342,17 +342,21 @@ impl Emoji {
     }
 
     /// Tries to extract the `EmojiKind` from the Emoji's sequence.
-    /// It will only output either `Some(Emoji)`, `Some(EmojiZwjSequence)`, `Some(EmojiSequence)` or
-    /// `None` (if the sequence is empty).
+    /// Currently the following emoji kinds can be detected:
+    /// - `Emoji`
+    /// - `EmojiSequence`
+    /// - `EmojiZwjSequence`
+    /// - `EmojiFlagSequence`
+    /// - `EmojiKeycapSequence`
     /// # Examples
     /// ```
     /// use emoji_builder::emoji::{Emoji,EmojiKind};
     ///
     /// let emoji = Emoji::from(vec![0x1f914]);
     ///
-    /// let kind = emoji.guess_kind();
+    /// let kind = emoji.guess_kinds();
     ///
-    /// assert_eq!(kind.unwrap(), EmojiKind::Emoji);
+    /// assert_eq!(kind.unwrap(), vec![EmojiKind::Emoji]);
     /// ```
     ///
     /// ```
@@ -360,9 +364,9 @@ impl Emoji {
     ///
     /// let emoji = Emoji::from(vec![0x1f914, 0x200d, 0x42]);
     ///
-    /// let kind = emoji.guess_kind();
+    /// let kind = emoji.guess_kinds();
     ///
-    /// assert_eq!(kind, Some(EmojiKind::EmojiZwjSequence));
+    /// assert_eq!(kind, Some(vec![EmojiKind::EmojiZwjSequence]));
     /// ```
     ///
     /// ```
@@ -370,9 +374,9 @@ impl Emoji {
     ///
     /// let emoji = Emoji::from(vec![0x1f914, 0x42]);
     ///
-    /// let kind = emoji.guess_kind();
+    /// let kind = emoji.guess_kinds();
     ///
-    /// assert_eq!(kind, Some(EmojiKind::EmojiSequence));
+    /// assert_eq!(kind, Some(vec![EmojiKind::EmojiSequence]));
     /// ```
     ///
     /// ```
@@ -380,19 +384,54 @@ impl Emoji {
     ///
     /// let emoji = Emoji::from(vec![]);
     ///
-    /// let kind = emoji.guess_kind();
+    /// let kind = emoji.guess_kinds();
     ///
     /// assert_eq!(kind, None);
     /// ```
-    pub fn guess_kind(&self) -> Option<EmojiKind> {
+    ///
+    /// ```
+    /// use emoji_builder::emoji::{Emoji, EmojiKind};
+    /// use emoji_builder::emoji::EmojiKind::{EmojiSequence, EmojiFlagSequence};
+    ///
+    /// let emoji = Emoji::from_flag("DE", &None).unwrap();
+    ///
+    /// let kind = emoji.guess_kinds();
+    ///
+    /// assert_eq!(kind, Some(vec![EmojiSequence, EmojiFlagSequence]));
+    /// ```
+    ///
+    /// ```
+    /// use emoji_builder::emoji::{Emoji, EmojiKind};
+    /// use emoji_builder::emoji::EmojiKind::{EmojiSequence, EmojiKeycapSequence};
+    ///
+    /// let emoji = Emoji::from(vec![0x2a, 0xfe0f, 0x20e3]);
+    ///
+    /// let kind = emoji.guess_kinds();
+    ///
+    /// assert_eq!(kind, Some(vec![EmojiSequence, EmojiKeycapSequence]));
+    /// ```
+    pub fn guess_kinds(&self) -> Option<Vec<EmojiKind>> {
         if self.sequence.is_empty() {
             None
         } else if self.sequence.len() == 1 {
-            Some(EmojiKind::Emoji)
-        } else if self.sequence.contains(&0x200d) {
-            Some(EmojiKind::EmojiZwjSequence)
+            Some(vec![EmojiKind::Emoji])
         } else {
-            Some(EmojiKind::EmojiSequence)
+            let flag = self.is_flag();
+            let keycap = self.sequence.contains(&0x20e3);
+
+            let mut kinds = Vec::with_capacity(1 + flag as usize + keycap as usize);
+            if self.sequence.contains(&0x200d) {
+                kinds.push(EmojiKind::EmojiZwjSequence);
+            } else {
+                kinds.push(EmojiKind::EmojiSequence);
+            }
+            if flag {
+                kinds.push(EmojiKind::EmojiFlagSequence);
+            }
+            if keycap {
+                kinds.push(EmojiKeycapSequence)
+            }
+            Some(kinds)
         }
     }
 
@@ -446,7 +485,7 @@ impl Emoji {
     /// ```
     /// use emoji_builder::emoji::Emoji;
     ///
-    /// let germany = Emoji::from_flag("de", None);
+    /// let germany = Emoji::from_flag("de", &None).unwrap();
     ///
     /// assert_eq!(germany.get_flag_name().unwrap(), "DE");
     /// ```
@@ -454,7 +493,7 @@ impl Emoji {
     /// ```
     /// use emoji_builder::emoji::Emoji;
     ///
-    /// let thinking = Emoji::from_u32_sequence(vec![0x1f914], None);
+    /// let thinking = Emoji::from_u32_sequence(vec![0x1f914], &None).unwrap();
     ///
     /// assert_eq!(thinking.get_flag_name(), None);
     /// ```
@@ -462,9 +501,9 @@ impl Emoji {
     /// ```
     /// use emoji_builder::emoji::Emoji;
     ///
-    /// let salzburg = Emoji::from_flag("AT-5", None);
+    /// let salzburg = Emoji::from_flag("AT-5", &None).unwrap();
     ///
-    /// assert_eq!(salzburg.unwrap(), "AT-5");
+    /// assert_eq!(salzburg.get_flag_name().unwrap(), "AT-5");
     /// ```
     pub fn get_flag_name(&self) -> Option<String> {
         self.get_country_name().or_else(|| self.get_subdiv_name())
@@ -511,7 +550,7 @@ impl Emoji {
     /// ```
     /// use emoji_builder::emoji::Emoji;
     ///
-    /// let germany = Emoji::from_flag("DE", None).unwrap();
+    /// let germany = Emoji::from_flag("DE", &None).unwrap();
     ///
     /// assert!(germany.is_flag());
     /// ```
@@ -632,9 +671,11 @@ impl FromStr for EmojiKind {
 /// # Examples
 /// ```
 /// use emoji_builder::emoji::EmojiKind;
-/// let kind = EmojiKind::from_str(":D");
+/// use std::str::FromStr;
+/// 
+/// let kind = EmojiKind::from_str(":P");
 /// assert!(kind.is_err());
-/// assert_eq!(EmojiKind::Other(String::from(":D")), kind.err().unwrap());
+/// assert_eq!(EmojiKind::Other(String::from(":p")), kind.err().unwrap().get());
 /// ```
 pub struct UnknownEmojiKind(EmojiKind);
 
@@ -660,7 +701,7 @@ impl Display for Emoji {
     ///
     /// use emoji_builder::emoji::Emoji;
     ///
-    /// let thinking = Emoji::from_u32_sequence(vec![0x1f914], None);
+    /// let thinking = Emoji::from_u32_sequence(vec![0x1f914], &None).unwrap();
     ///
     /// assert_eq!("[1F914]", format!("{}", thinking));
     /// ```
@@ -669,7 +710,7 @@ impl Display for Emoji {
     ///
     /// use emoji_builder::emoji::Emoji;
     ///
-    /// let rainbow = Emoji::from_u32_sequence(vec![0x1f3f3, 0xfe0f, 0x200d, 0x1f308], None);
+    /// let rainbow = Emoji::from_u32_sequence(vec![0x1f3f3, 0xfe0f, 0x200d, 0x1f308], &None).unwrap();
     ///
     /// assert_eq!("[1F3F3-FE0F-200D-1F308]", format!("{}", rainbow));
     /// ```
@@ -677,7 +718,7 @@ impl Display for Emoji {
     /// ```
     /// use emoji_builder::emoji::Emoji;
     ///
-    /// let nrw = Emoji::from_flag("de-nw", None).unwrap();
+    /// let nrw = Emoji::from_flag("de-nw", &None).unwrap();
     ///
     /// assert_eq!("Flag DE-NW", format!("{}", nrw));
     /// ```
@@ -685,7 +726,7 @@ impl Display for Emoji {
     /// ```
     /// use emoji_builder::emoji::Emoji;
     ///
-    /// let mut party = Emoji::from_u32_sequence(vec![0x1f973], None).unwrap();
+    /// let mut party = Emoji::from_u32_sequence(vec![0x1f973], &None).unwrap();
     /// party.name = Some(String::from("Party face"));
     ///
     /// assert_eq!("Party face", format!("{}", party));
