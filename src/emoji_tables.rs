@@ -22,13 +22,12 @@ use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Error};
-use std::ops::Index;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 
 use regex::Regex;
 
-use crate::emoji::{Emoji, EmojiKind};
+use crate::emoji::EmojiKind;
 
 type EmojiTableKey = Vec<u32>;
 type EmojiTableEntry = (Vec<EmojiKind>, Option<String>);

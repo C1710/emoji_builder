@@ -59,9 +59,9 @@ impl EmojiBuilder for DummyBuilder {
     type PreparedEmoji = Vec<u8>;
 
     fn new(
-        build_dir: PathBuf,
-        verbose: bool,
-        arguments: Option<&ArgMatches>,
+        _build_dir: PathBuf,
+        _verbose: bool,
+        _arguments: Option<&ArgMatches>,
     ) -> Result<Box<Self>, Self::Err> {
         Ok(Box::new(DummyBuilder()))
     }

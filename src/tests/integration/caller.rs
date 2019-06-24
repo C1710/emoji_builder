@@ -24,7 +24,7 @@ use crate::emoji::Emoji;
 use crate::emoji_tables::EmojiTable;
 use crate::tests::integration::builder::DummyBuilder;
 
-struct TestResult<T: EmojiBuilder> {
+pub struct TestResult<T: EmojiBuilder> {
     build_path: PathBuf,
     output_path: PathBuf,
     result: Result<(), T::Err>,
@@ -55,7 +55,7 @@ fn create_temps() -> (PathBuf, PathBuf) {
     (build_path, output_path)
 }
 
-fn run<T: EmojiBuilder>(emojis: &[Emoji]) -> (PathBuf, PathBuf, Result<(), T::Err>) {
+pub fn run<T: EmojiBuilder>(emojis: &[Emoji]) -> (PathBuf, PathBuf, Result<(), T::Err>) {
     let (build_path, output_path) = create_temps();
     let mut builder: T = create(build_path.clone());
     let prepared = prepare(emojis, &builder);
@@ -93,7 +93,7 @@ const TEST_FLAGS: &str = "test_files/flags";
 const TEST_TABLES: &str = "test_files/tables";
 const TEST_HASHES: &str = "test_files/hashes.csv";
 
-fn run_with_test_files<T: EmojiBuilder>() -> TestResult<T> {
+pub fn run_with_test_files<T: EmojiBuilder>() -> TestResult<T> {
     let table = parse_tables(&PathBuf::from(TEST_TABLES));
     let emojis = parse_emojis(
         &PathBuf::from(TEST_EMOJIS),
@@ -112,7 +112,6 @@ fn run_with_test_files<T: EmojiBuilder>() -> TestResult<T> {
 }
 
 #[test]
-#[ignore]
 fn test_dummy() {
     let result = run_with_test_files::<DummyBuilder>();
     // First of all, have there been any errors?

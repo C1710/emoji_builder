@@ -20,7 +20,7 @@ use std::fmt::Debug;
 use std::fs::create_dir;
 use std::path::PathBuf;
 
-use clap::{App, ArgMatches, SubCommand};
+use clap::{App, ArgMatches};
 
 use crate::builder::ResetError::IoError;
 use crate::emoji::Emoji;
@@ -98,8 +98,8 @@ pub trait EmojiBuilder {
     /// prepared before the user has initiated the build and "approved" them.
     fn undo(
         &self,
-        emoji: &Emoji,
-        prepared: Result<Self::PreparedEmoji, Self::Err>,
+        _emoji: &Emoji,
+        _prepared: Result<Self::PreparedEmoji, Self::Err>,
     ) -> Result<(), Self::Err> {
         Ok(())
     }

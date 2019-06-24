@@ -26,7 +26,6 @@ use std::path::{Path, PathBuf};
 
 use csv::Error;
 use digest::generic_array::GenericArray;
-use hex::FromHexError;
 use sha2::{Digest, Sha256};
 
 use crate::changes::CheckError::{Io, NoFileSpecified};

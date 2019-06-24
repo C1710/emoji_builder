@@ -32,11 +32,9 @@ use std::path::PathBuf;
 
 use clap::{App, ArgMatches, SubCommand};
 use itertools::Itertools;
-use oxipng::{optimize, optimize_from_memory, PngResult};
+use oxipng::{optimize_from_memory, PngResult};
 use oxipng::internal_tests::Headers::Safe;
 use png::HasParameters;
-use rayon::iter::IntoParallelRefIterator;
-use rayon::iter::ParallelIterator;
 use resvg::backend_raqote;
 use resvg::FitTo;
 use resvg::prelude::*;
@@ -134,7 +132,7 @@ impl EmojiBuilder for Blobmoji {
     fn build(
         &mut self,
         emojis: HashMap<&Emoji, Result<Self::PreparedEmoji, Self::Err>>,
-        output_file: PathBuf,
+        _output_file: PathBuf,
     ) -> Result<(), Self::Err> {
         // Save the new hashes
 

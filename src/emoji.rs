@@ -18,7 +18,7 @@
 use std::fmt::{Display, Formatter};
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::ops::{Range, RangeInclusive};
+use std::ops::RangeInclusive;
 use std::path::PathBuf;
 use std::str::FromStr;
 
