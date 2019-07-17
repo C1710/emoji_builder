@@ -3,8 +3,6 @@
 # Emoji Builder
 _Currently under development_.
 
-Please note, that due to licensing issues, the emoji tables feature can not be properly tested.
- 
 ## License
     Copyright 2019 Constantin A. <emoji.builder@c1710.de>
 
