@@ -61,7 +61,7 @@ impl EmojiBuilder for DummyBuilder {
     fn new(
         _build_dir: PathBuf,
         _verbose: bool,
-        _arguments: Option<&ArgMatches>,
+        _arguments: Option<ArgMatches>,
     ) -> Result<Box<Self>, Self::Err> {
         Ok(Box::new(DummyBuilder()))
     }
