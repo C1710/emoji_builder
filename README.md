@@ -20,4 +20,6 @@ _Currently under development_.
 
 ## Third party code
 This project uses many different crates. Their licenses can be found in the `licenses` folder.  
-For more information, there's a `README.txt` included.
+For more information, there's a `README.txt` included.  
+However, only licenses for dependencies are included that are neither `dev-`, nor `build-`dependencies.  
+Anyway, the whole source code of the dependencies is available online and also locally once `cargo build` is called.
