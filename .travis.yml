@@ -1,0 +1,4 @@
+language: rust
+env:
+  RUST_BACKTRACE=1
+cache: cargo

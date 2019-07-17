@@ -1,0 +1,47 @@
+name: Emoji Builder
+author: Constantin A. <emoji.builder@c1710.de>
+about: Easily build emoji fonts
+args:
+  - images:
+      short: i
+      long: images
+      value_name: DIR
+      help: The directory containing all emoji images
+      takes_value: true
+      default_value: ./svg
+  - flags:
+      short: f
+      long: flags
+      value_name: DIR
+      help: A directory containing flag images named after their ISO 3166-1/2 code
+      takes_value: true
+  - tables:
+      short: t
+      long: tables
+      value_name: DIR
+      help: A directory containing tables in a format like the Unicode® Emoji data tables
+      takes_value: true
+  - verbose:
+      short: v
+      long: verbose
+      help: Prints additional information on the build process
+  - build:
+      short: b
+      long: build
+      value_name: DIR
+      help: The directory to store the data used during the build process
+      takes_value: true
+      default_value: ./build
+  - output:
+      short: o
+      long: output
+      value_name: FILE
+      help: The name of the finished emoji set (file type may vary)
+      takes_value: true
+      default_value: font.ttf
+  - output_dir:
+      short: O
+      long: output-dir
+      value_name: DIR
+      help: The directory containing the finished emoji set
+      default_value: ./fonts
