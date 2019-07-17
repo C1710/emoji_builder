@@ -62,7 +62,7 @@ impl EmojiBuilder for Blobmoji {
     fn new(
         build_path: PathBuf,
         verbose: bool,
-        _arguments: Option<&ArgMatches>,
+        _arguments: Option<ArgMatches>,
     ) -> Result<Box<Self>, Self::Err> {
         let hash_path = build_path.join(String::from(HASHES));
         let hashes = FileHashes::from_path(hash_path.as_path());

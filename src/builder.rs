@@ -29,9 +29,9 @@ use crate::emoji::Emoji;
 ///
 /// Usually an `EmojiBuilder` will build an emoji font in one (or more) specific format(s), but
 /// it might be used in other contexts as well.
-pub trait EmojiBuilder {
-    type Err: Debug;
-    type PreparedEmoji;
+pub trait EmojiBuilder: Send + Sync {
+    type Err: Debug + Send + Sync;
+    type PreparedEmoji: Send + Sync;
 
     /// Initializes a new `EmojiBuilder` before using it.
     /// This can set up different settings and specify the working directory for the builder.
@@ -41,7 +41,7 @@ pub trait EmojiBuilder {
     fn new(
         build_dir: PathBuf,
         verbose: bool,
-        arguments: Option<&ArgMatches>,
+        arguments: Option<ArgMatches>,
     ) -> Result<Box<Self>, Self::Err>;
 
     /// Called when the builder is supposed to stop its work.

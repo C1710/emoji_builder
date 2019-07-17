@@ -24,7 +24,6 @@ png = "0.14.1"
 tempfile = "3.0.8"
 usvg = "0.7.0"
 digest = "0.8.0"
+yaml-rust = "0.3.5"
 
-[build-dependencies]
-cc = "1.0.37"
 
