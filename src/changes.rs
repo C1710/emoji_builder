@@ -20,7 +20,7 @@
 
 use std::{fs, io};
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{Cursor, Read, Write};
 use std::ops::Index;
 use std::path::{Path, PathBuf};
 
@@ -86,7 +86,14 @@ impl FileHashes {
 
             if let Some(hash) = hash {
                 match file {
-                    Ok(mut file) => match io::copy(&mut file, &mut hasher) {
+                    // To get consistent results, CRs will be ignored
+                    // (in order to get consistent line endings)
+                    // TODO: Maybe change this behavior in the future as it's messy and actually
+                    //       Only relevant in the tests.
+                    //       When used in production, line endings can actually be considered to
+                    //       stay the same, and even if not, re-rendering only impacts the
+                    //       performance, but not the correctness of the result.
+                    Ok(file) => match io::copy(&mut NoCRRead(file), &mut hasher) {
                         Ok(_) => {
                             let result = hasher.result();
                             let result = result.as_slice();
@@ -116,13 +123,16 @@ impl FileHashes {
     }
 
     /// Computes the hash value of a single file.
-    /// This is mostly useful for parallel implementations
+    /// This is mostly useful for parallel implementations.
     pub fn hash(emoji: &Emoji) -> Result<GenericArray<u8, <Sha256 as Digest>::OutputSize>, CheckError> {
         if let Some(path) = &emoji.svg_path {
             let mut hasher = Sha256::new();
             let file = fs::File::open(path);
             match file {
-                Ok(mut file) => match io::copy(&mut file, &mut hasher) {
+                // To get consistent results, CRs will be ignored
+                // (in order to get consistent line endings)
+                // TODO: Maybe change this behavior in the future
+                Ok(file) => match io::copy(&mut NoCRRead(file), &mut hasher) {
                     Ok(_) => Ok(hasher.result()),
                     Err(error) => Err(Io(error))
                 },
@@ -213,4 +223,54 @@ fn parse_hex(sequence: &str) -> Vec<u32> {
         .filter(|code| !code.is_err())
         .map(std::result::Result::unwrap)
         .collect()
+}
+
+/// A wrapper that discards all occurences of CR-characters (ASCII 0xD)
+struct NoCRRead<R: Read>(R);
+
+impl<R: Read> Read for NoCRRead<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let mut read_bytes = self.0.read(buf)?;
+        let crs = bytecount::count(&buf[..read_bytes], 0xdu8);
+        // Pretend we didn't read the CR-bytes
+        read_bytes -= crs;
+        // Found a C
+        if crs > 0 {
+            let ptr = buf.as_mut_ptr();
+            for (i, d) in buf.iter().filter(|d| **d != 0xdu8).enumerate() {
+                // This unsafe block allows to write to the given position although the array is already borrowed
+                // However, it's okay to do that, as of these reasons:
+                // 1. It's already borrowed as mutable, so no one else may write to it
+                // 2. we've already read the affected value
+                // 3. The add(i) is okay as we will at most reach the end of the slice with it
+                unsafe {
+                    *(ptr.add(i)) = *d;
+                }
+            }
+            // Fill the rest of the slice with fresh data
+            let len = buf.len();
+            read_bytes += self.read(&mut buf[len - crs..])?;
+        }
+        buf[read_bytes..].iter_mut().for_each(|d| *d = 0x0u8);
+        Ok(read_bytes)
+    }
+}
+
+
+#[test]
+fn test_nocr() {
+    // First create some test-data
+    let cursor = Cursor::new(vec![0x41, 0xd, 0xa, 0x42]);
+    // Empty buffer
+    let mut buf = [0x0u8; 4];
+    // Test without removing the CRs
+    let read_bytes = cursor.clone().read(&mut buf).unwrap();
+    assert_eq!(read_bytes, 4);
+    assert_eq!(buf, [0x41, 0xd, 0xa, 0x42]);
+
+    // Test with removing the CRs
+    let mut reader = NoCRRead(cursor);
+    let read_bytes = reader.read(&mut buf).unwrap();
+    assert_eq!(read_bytes, 3);
+    assert_eq!(buf, [0x41u8, 0xau8, 0x42u8, 0x0u8]);
 }
