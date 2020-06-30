@@ -3,8 +3,24 @@
 # Emoji Builder
 _Currently under development_.
 
+## Build
+You will need a working Rust toolchain and `cmake`.  
+Install instructions for the Rust toolchain can be found at https://rustup.rs.  
+Install instructions for `cmake` can be found at https://cmake.org
+
+If you use Windows 10, you might want to use [`winget`](https://github.com/microsoft/winget-cli) for that:
+```
+winget install rustup
+winget install -e CMake
+```
+(You might need to add `cmake` to your PATH first. When installed on Windows using `winget` it's usually located at `C:\Program Files\CMake\bin`)
+
+If everything is installed successfully you can simply run `cargo build`, `cargo run`, `cargo test`, etc. and that's it.  
+
+You'll also need a working Python 3.6+ environment with some additional requirements: https://pyo3.rs/v0.11.0/building_and_distribution.html#linking
+
 ## License
-    Copyright 2019 Constantin A. <emoji.builder@c1710.de>
+    Copyright 2019-2020 Constantin A. <emoji.builder@c1710.de>
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.

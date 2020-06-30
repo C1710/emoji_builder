@@ -61,7 +61,7 @@ fn build<Builder: EmojiBuilder>() {
         .collect();
     let result = builder.as_mut().build(prepared, output);
     if let Err(err) = result {
-        eprintln!("AN error occured while building the emoji set: {:?}", err);
+        eprintln!("An error occured while building the emoji set: {:?}", err);
     }
 }
 

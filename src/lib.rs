@@ -22,6 +22,7 @@ pub mod builders;
 pub mod changes;
 pub mod emoji;
 pub mod emoji_tables;
+pub mod emoji_postprocessor;
 
 #[cfg(test)]
 mod tests;

@@ -91,9 +91,6 @@ pub trait EmojiBuilder: Send + Sync {
     /// Does the exact opposite to `prepare`, i.e. it assumes that the emoji
     /// has already been prepared and it undoes that operation (e.g. by deleting the file).
     ///
-    /// If `prepare` isn't written under the assumption that `prepare` hasn't been called yet,
-    /// `undo` may also do nothing.
-    ///
     /// This function can be used to do for example speculative rendering, i.e. the emojis get
     /// prepared before the user has initiated the build and "approved" them.
     fn undo(

@@ -1,0 +1,10 @@
+From https://github.com/googlefonts/noto-emoji
+The following directories have been deleted:
+png
+svg
+third_party/region_flags
+font
+images
+.git (in order to save space)
+
+This file is NOT part of the original repository

@@ -20,11 +20,11 @@ rand = "0.6.5"
 rayon = "1.0"
 remove_dir_all = "0.5.1"
 clap = {version = "2.33", features = ["yaml"]}
-png = "0.14.1"
+png = "0.16.5"
 tempfile = "3.0.8"
 usvg = "0.9.1"
 digest = "0.8.0"
 yaml-rust = "0.3.5"
 rctree = "0.3"
 bytecount = "0.6.0"
-
+pyo3 = "0.11.0"
