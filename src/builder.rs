@@ -106,6 +106,7 @@ pub trait EmojiBuilder: Send + Sync {
     ///
     /// The resulting argument match is returned in the `new` function.
     fn sub_command<'a, 'b>() -> App<'a, 'b>;
+    
 }
 
 pub enum ResetError<T> {

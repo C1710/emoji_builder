@@ -34,9 +34,6 @@ use clap::{App, ArgMatches, SubCommand, Arg};
 use itertools::Itertools;
 use oxipng::{optimize_from_memory, PngResult};
 use oxipng::internal_tests::Headers::Safe;
-use resvg::backend_raqote;
-use resvg::FitTo;
-use resvg::prelude::*;
 use sha2::{Digest, Sha256};
 use sha2::digest::generic_array::GenericArray;
 
@@ -44,12 +41,12 @@ use crate::builder::EmojiBuilder;
 use crate::changes::{CheckError, FileHashes};
 use crate::emoji::Emoji;
 use crate::builders;
-use pyo3::{Python, PyResult};
+use pyo3::{Python, PyResult, IntoPy};
 use pyo3::prelude::PyModule;
 use std::str::FromStr;
-use std::process::{Command, Stdio};
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyString, PyTuple};
 use std::iter::FromIterator;
+use usvg::{FitTo, SystemFontDB};
 
 #[allow(dead_code)]
 pub struct Blobmoji {
@@ -58,7 +55,9 @@ pub struct Blobmoji {
     hashes: FileHashes,
     verbose: bool,
     aliases: Option<PathBuf>,
-    render_only: bool
+    render_only: bool,
+    default_font: String,
+    fontdb: usvg::fontdb::Database,
 }
 
 const HASHES: &str = "hashes.csv";
@@ -106,9 +105,19 @@ impl EmojiBuilder for Blobmoji {
             }
         };
 
-        let render_only = match matches {
+        let render_only = match &matches {
             None => false,
             Some(matches) => matches.is_present("render_only")
+        };
+
+        let default_font = match &matches {
+            None => String::from("cursive"),
+            Some(matches) => String::from(matches.value_of("default_font").unwrap_or("cursive"))
+        };
+
+        let addtional_fonts = match &matches {
+            None => None,
+            Some(matches) => matches.values_of_os("additional_fonts")
         };
 
         let ttx_tmpl_path = build_path.join(TMPL_TTX_TMPL);
@@ -126,13 +135,31 @@ impl EmojiBuilder for Blobmoji {
             create_dir_all(png_dir).unwrap();
         };
 
+        let mut fontdb = usvg::fontdb::Database::new();
+        fontdb.load_system_fonts();
+
+        // Load all the additional fonts
+        if let Some(additional_fonts) = addtional_fonts {
+            additional_fonts.into_iter()
+                .map(|font_path| PathBuf::from(font_path))
+                .for_each(|font_path| if font_path.is_file() {
+                    fontdb.load_font_file(font_path).unwrap()
+                } else {
+                    if font_path.is_dir() {
+                        fontdb.load_fonts_dir(font_path)
+                    }
+                });
+        }
+
         let builder = Box::new(Blobmoji {
             build_path,
             name: None,
             hashes,
             verbose,
             aliases,
-            render_only
+            render_only,
+            default_font,
+            fontdb
         });
         Ok(builder)
     }
@@ -186,7 +213,11 @@ impl EmojiBuilder for Blobmoji {
             if self.verbose {
                 println!("Emoji is already available");
             }
-            Err(())
+            let hash = &self.hashes[emoji];
+            // As the hash values can be assumed to be generated just like above,
+            // We can safely assume their size to be like this
+            let hash: GenericArray<u8, <Sha256 as Digest>::OutputSize> = GenericArray::clone_from_slice(hash);
+            Ok((path, Ok(hash)))
         }
     }
 
@@ -197,7 +228,8 @@ impl EmojiBuilder for Blobmoji {
         emojis: HashMap<&Emoji, Result<Self::PreparedEmoji, Self::Err>>,
         _output_file: PathBuf,
     ) -> Result<(), Self::Err> {
-        // Collect all errors that occurred while checking the hashes
+        assert!(emojis.len() > 0);
+        // Collect all errors that occurred while checking the hashes and save those that were successful
         let hashing_errors = emojis.iter()
             .filter_map(|(emoji, result)| match result {
                 Ok((_, hash)) => Some((emoji, hash)),
@@ -205,7 +237,11 @@ impl EmojiBuilder for Blobmoji {
             })
             .filter_map(|(emoji, hash)|
                 match hash {
-                    Ok(_) => None,
+                    Ok(hash) => {
+                        // Update the hash value
+                        self.hashes.update(emoji, hash);
+                        None
+                    },
                     Err(error) => Some((emoji, error))
                 })
             .collect_vec();
@@ -251,11 +287,21 @@ impl EmojiBuilder for Blobmoji {
             //       - Implement
 
             // TODO: Handle errors
-            self.add_glyphs(
+            if self.verbose {
+                println!("Adding glyphs");
+            }
+            match self.add_glyphs(
                 &emojis,
                 self.build_path.join(TMPL_TTX_TMPL),
                 self.build_path.join(TMPL_TTX)
-            ).unwrap();
+            ) {
+                Ok(_) => (),
+                Err(err) => {
+                    let gil = Python::acquire_gil();
+                    let py = gil.python();
+                    err.print(py);
+                }
+            };
 
             let tmpl_ttf = self.build_path.join(TMPL_TTF);
             // TODO: This if-condition might be unnecessary
@@ -263,13 +309,57 @@ impl EmojiBuilder for Blobmoji {
                 remove_file(tmpl_ttf).unwrap();
             }
 
-            self.build_ttf().unwrap();
+            if self.verbose {
+                println!("Building TTF");
+            }
+            match self.build_ttf() {
+                Ok(_) => (),
+                Err(err) => {
+                    let gil = Python::acquire_gil();
+                    let py = gil.python();
+                    err.print(py);
+                    panic!()
+                }
+            };
 
-            self.emoji_builder().unwrap();
+            if self.verbose {
+                println!("Doing... something");
+            }
+            match self.emoji_builder() {
+                Ok(_) => (),
+                Err(err) => {
+                    let gil = Python::acquire_gil();
+                    let py = gil.python();
+                    err.print(py);
+                    panic!()
+                }
+            };
 
-            self.map_pua().unwrap();
+            if self.verbose {
+                println!("Mapping PUA");
+            }
+            match self.map_pua() {
+                Ok(_) => (),
+                Err(err) => {
+                    let gil = Python::acquire_gil();
+                    let py = gil.python();
+                    err.print(py);
+                    panic!()
+                }
+            };
 
-            self.add_vs_cmap().unwrap();
+            if self.verbose {
+                println!("Adding Version Selector");
+            }
+            match self.add_vs_cmap() {
+                Ok(_) => (),
+                Err(err) => {
+                    let gil = Python::acquire_gil();
+                    let py = gil.python();
+                    err.print(py);
+                    panic!()
+                }
+            };
 
             rename(
                 self.build_path.join(TTF_WITH_PUA_VARSE1),
@@ -277,6 +367,8 @@ impl EmojiBuilder for Blobmoji {
             ).unwrap();
 
             remove_file(self.build_path.join(TTF_WITH_PUA)).unwrap();
+            remove_file(self.build_path.join(TMPL_TTX)).unwrap();
+            remove_file(self.build_path.join(TMPL_TTF)).unwrap();
         }
 
         // Currently the only task is to render the emojis...
@@ -303,6 +395,23 @@ impl EmojiBuilder for Blobmoji {
                 .takes_value(false)
                 .required(false)
             )
+            .arg(Arg::with_name("default_font")
+                .short("F")
+                .long("default_font")
+                .help("The font to use if either none is specified or the chosen one is not available")
+                .takes_value(true)
+                .default_value("cursive")
+                .required(false))
+            .arg(Arg::with_name("additional_fonts")
+                .short("af")
+                .long("font_files")
+                .help("Additional fonts to load besides the system provided ones")
+                .long_help("Additional fonts to load besides the system provided ones. \
+                You may specify directories or files")
+                .takes_value(true)
+                .required(false)
+                .value_name("FILE/DIR")
+                .multiple(true))
     }
 }
 
@@ -324,33 +433,33 @@ impl Blobmoji {
     /// An `Option` containing the image as a vector of RGBA pixels and the larger dimension.
     fn render_svg(&self, emoji: &Emoji) -> Option<(Vec<u8>, FitTo)> {
         if let Some(svg_path) = &emoji.svg_path {
-            let mut opt = resvg::Options::default();
+            let mut opt = usvg::Options::default();
             let path = PathBuf::from(&svg_path.as_os_str());
-            opt.usvg.path = Some(path);
-            // Just as a fallback. On Windows and Mac OS it will use Comic Sans
-            // which is pretty close to Comic Neue, which is used in Blobmoji
-            // TODO: Maybe make this an argument...
-            opt.usvg.font_family = String::from("cursive");
+            opt.path = Some(path);
+            // Just as a fallback. Default is "cursive",
+            // which on Windows and Mac OS it will use Comic Sans
+            // which is pretty close to Comic Neue, that is used in Blobmoji
+            opt.font_family = self.default_font.clone();
+            opt.fontdb = self.fontdb.clone();
 
-            let tree = usvg::Tree::from_file(svg_path, &opt.usvg);
+            let tree = usvg::Tree::from_file(svg_path, &opt);
 
             if let Ok(tree) = tree {
                 // It's easier to get the dimensions here
                 let size = tree.svg_node().size.to_screen_size();
                 // Adjust the target size if it's taller than 128px
-                opt.fit_to = if size.height() > size.width() {
+                let fit_to = if size.height() > size.width() {
                     FitTo::Height(RENDER_AND_CHARACTER_HEIGHT)
                 } else {
                     FitTo::Width(RENDER_WIDTH)
                 };
 
                 // This is the point where it's actually rendered
-                let img = backend_raqote::render_to_image(&tree, &opt);
+                let img = resvg::render(&tree, fit_to, None);
 
-                if let Some(mut img) = img {
-                    let data = img.get_data_u8_mut();
-                    bgra_to_rgba(data);
-                    Some((Vec::from(data), opt.fit_to))
+                if let Some(img) = img {
+                    let data = img.take();
+                    Some((data, fit_to))
                 } else {
                     eprintln!("Failed to render {}", emoji);
                     None
@@ -399,8 +508,10 @@ impl Blobmoji {
         }
     }
 
-    // TODO: Implement
     fn quantize_png<'a>(&self, img: &'a [u8]) -> Option<&'a [u8]> {
+        // Unfortunately the library that's originally used here, is not (at least not easily)
+        // compatible with Windows 10.
+        // There exists an updated versions, but the license that's used there is too restrictive.
         Some(img)
     }
 
@@ -411,6 +522,11 @@ impl Blobmoji {
         opt.color_type_reduction = true;
         opt.palette_reduction = true;
         opt.bit_depth_reduction = true;
+        opt.verbosity = if self.verbose {
+            Some(1)
+        } else {
+            None
+        };
 
         optimize_from_memory(img, &opt)
     }
@@ -528,8 +644,9 @@ impl Blobmoji {
     }
 
 
-    const ADD_GLYPHS_PY: &'static str = include_str!("noto-emoji/add_glyphs.py");
-    //const EMOJI_BUILDER_PY: &'static str = include_str!("noto-emoji/third_party/color_emoji/emoji_builder.py");
+    const ADD_GLYPHS_PY: &'static str = include_str!("add_glyphs/add_glyphs.py");
+    const ADD_ALIASES_PY: &'static str = include_str!("add_glyphs/add_aliases.py");
+    const ADD_EMOJI_GSUB_PY: &'static str = include_str!("add_glyphs/add_emoji_gsub.py");
 
     // TODO: Implement
     fn add_glyphs(&self,
@@ -544,8 +661,8 @@ impl Blobmoji {
         //  seq = cps.filter(|cp| cp != fe0f)
         //  check cps (codepoints) if between 0 and 0x10ffff
         //  seq_to_file.add( sequence: path to corresponding image)
-        // We don't care about the order
-        let seq_to_file: HashMap<_, _> = emojis.iter()
+        // Unfortunately parallel processing is not possible due to Python
+        let seq_to_file = emojis.iter()
             .filter(|(_, prepared)| prepared.is_ok())
             .map(|(emoji, prepared)| (
                 // First get the sequences as a list of strings instead of u32s
@@ -553,21 +670,42 @@ impl Blobmoji {
                     // In order to replicate the original behavior, we'll need to filter out fe0f
                     // variant selectors
                     // TODO: Revisit this behavior
-                    .filter(|codepoint| **codepoint != 0xfe0fu32)
-                    .map(|codepoint| format!("{:x}", codepoint)).collect_vec(),
+                    .filter(|codepoint| **codepoint != 0xfe0fu32).collect_vec(),
                 // Then get the file output path
                 prepared.as_ref().unwrap().0.to_string_lossy().into_owned()
-            ))
-            .collect();
+            ));
 
         // From https://pyo3.rs/master/python_from_rust.html
         let gil = Python::acquire_gil();
         let py = gil.python();
+
+
+        // Prepare the modules that add_glyphs will need
+        PyModule::from_code(
+            py,
+            Blobmoji::ADD_EMOJI_GSUB_PY,
+            "add_emoji_gsub.py",
+            "add_emoji_gsub"
+        )?;
+        PyModule::from_code(
+            py,
+            Blobmoji::ADD_ALIASES_PY,
+            "add_aliases.py",
+            "add_aliases"
+        )?;
+        PyModule::from_code(
+            py,
+            Blobmoji::PNG_PY,
+            "third_party/color_emoji/png.py",
+            "png"
+        )?;
+
         let add_glyphs_module = PyModule::from_code(
             py,
             Blobmoji::ADD_GLYPHS_PY,
             "add_glyphs.py",
             "add_glyphs")?;
+
 
         // In order to use this mapping, we'll need to replace the update_ttx-function
         // This code is mostly copied from https://github.com/googlefonts/noto-emoji/blob/f8131fc45736000552cd04a8388dc414d666a829/add_glyphs.py#L353
@@ -576,39 +714,52 @@ impl Blobmoji {
                 "add_aliases.read_emoji_aliases", (aliases.to_string_lossy().into_owned(),))?),
             None => None
         };
+
+        let seq_to_file: Vec<(&PyTuple, &PyString)> = seq_to_file
+            .map(|(sequence, filepath)|
+            (PyTuple::new(py, sequence), PyString::new(py, &filepath)))
+            .collect();
+
+        let seq_to_file_dict = PyDict::from_sequence(py, seq_to_file.into_py(py))?;
+
         let aliases = match aliases {
             Some(aliases) => Some(add_glyphs_module.call1(
-                "apply_aliases", (seq_to_file.clone(), aliases)
-            )?),
+                "apply_aliases", (seq_to_file_dict, aliases)
+            ).unwrap()),
             None => None
         };
 
-        let font = add_glyphs_module.call0("ttx.TTFont")?;
+        let ttx_module = PyModule::import(py, "fontTools.ttx")?;
+
+
+        let font = ttx_module.call0("TTFont")?;
         // FIXME: Input file missing
         font.call_method1("importXML", (ttx_tmpl.to_string_lossy().into_owned(), ))?;
 
-        let ascent:  i32 = font.get_item("'hhea'")?.getattr("'ascent'" )?.extract()?;
-        let descent: i32 = font.get_item("'hhea'")?.getattr("'descent'")?.extract()?;
+        let hhea = font.get_item("hhea")?;
+        let ascent = hhea.getattr("ascent")?;
+        let descent = hhea.getattr("descent")?;
+
+        let ascent:  i32 = ascent.extract()?;
+        let descent: i32 = descent.extract()?;
         let lineheight = ascent - descent;
 
-        // This is included in the original file but it doesn't seem to be used.
-        /*
         let map_fn = add_glyphs_module.call1(
             "get_png_file_to_advance_mapper",
             (lineheight,)
         )?;
         let seq_to_advance = add_glyphs_module.call1(
             "remap_values",
-            (map_fn,)
-        )?;*/
+            (seq_to_file_dict, map_fn)
+        )?;
 
-        let vadvance = if font.call_method1("__contains__", ("'vhea'",))?.extract()? {
-            font.get_item("'vhea'")?.extract()?
+        let vadvance = if font.call_method1("__contains__", ("vhea",))?.extract()? {
+            font.get_item("vhea")?.getattr("advanceHeightMax")?.extract()?
         } else {
             lineheight
         };
 
-        add_glyphs_module.call1("update_font_data", (font, seq_to_file, vadvance, aliases))?;
+        add_glyphs_module.call1("update_font_data", (font, seq_to_advance, vadvance, aliases))?;
 
         font.call_method1("saveXML", (ttx.to_string_lossy().into_owned(),))?;
 
@@ -618,28 +769,70 @@ impl Blobmoji {
     fn build_ttf(&self) -> PyResult<()>{
         // TODO: Do this in a venv or similar
         // TODO: Don't require fonttools
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let ttx_module = PyModule::import(py, "fontTools.ttx")?;
 
-        let exit = Command::new("ttx")
-            .arg(self.build_path.join(TMPL_TTX))
-            .stdout(if self.verbose {
-                Stdio::inherit()
-            } else {
-                Stdio::null()
-            })
-            .stderr(Stdio::inherit())
-            .spawn()?.wait()?;
-        assert!(exit.success());
+        ttx_module.call1("main", (vec![self.build_path.join(TMPL_TTX).to_string_lossy().into_owned()],))?;
 
         Ok(())
     }
 
-    fn emoji_builder(&self) -> std::io::Result<()> {
+    const EMOJI_BUILDER_PY: &'static str = include_str!("color_emoji/emoji_builder.py");
+    const PNG_PY: &'static str = include_str!("color_emoji/png.py");
+
+    fn emoji_builder(&self) -> PyResult<()> {
         // TODO: Do with PyO3
         // This is too complicated to do with PyO3
-        let emoji_builder_path: PathBuf =
+        // TODO: We need access to that file. Embedding with include_str! is probably easier
+        /*let emoji_builder_path: PathBuf =
             ["noto-emoji", "third_party", "color_emoji", "emoji_builder.py"]
-                .iter().collect();
-        // TODO: Don't use a fixed python executable name
+                .iter().collect();*/
+
+        let tmpl_ttf = self.build_path
+            .join(TMPL_TTF)
+            .to_string_lossy()
+            .into_owned();
+        let ttf = self.build_path
+            .join(TTF)
+            .to_string_lossy()
+            .into_owned();
+        let png_dir = self.build_path
+            .join(PNG_DIR)
+            .join("emoji_u")
+            .to_string_lossy()
+            .into_owned();
+
+        let argv = vec![
+            "emoji_builder.py",
+            "-S",
+            "-V",
+            &tmpl_ttf,
+            &ttf,
+            &png_dir
+        ];
+
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+
+        PyModule::from_code(
+            py,
+            Blobmoji::PNG_PY,
+            "png.py",
+            "png"
+        )?;
+
+        let emoji_builder_module = PyModule::from_code(
+            py,
+            Blobmoji::EMOJI_BUILDER_PY,
+            "emoji_builder.py",
+            "emoji_builder"
+        )?;
+
+        emoji_builder_module.call1("main", (argv,))?;
+
+
+        /*// TODO: Don't use a fixed python executable name
         let exit = Command::new("python3")
             .arg(emoji_builder_path)
             .arg("-S")
@@ -653,16 +846,26 @@ impl Blobmoji {
                 Stdio::inherit()
             } else { Stdio::null() })
             .spawn()?.wait()?;
-        assert!(exit.success());
+        assert!(exit.success());*/
 
         Ok(())
     }
 
-    const MAP_PUA_EMOJI_PY: &'static str = include_str!("noto-emoji/map_pua_emoji.py");
+    const MAP_PUA_EMOJI_PY: &'static str = include_str!("map_pua_emoji/map_pua_emoji.py");
+    // We can reuse ADD_EMOJI_GSUB_PY from add_glyphs
 
     fn map_pua(&self) -> PyResult<()> {
         let gil = Python::acquire_gil();
         let py = gil.python();
+
+        // Prepare required module(s)
+        PyModule::from_code(
+            py,
+            Blobmoji::ADD_EMOJI_GSUB_PY,
+            "add_emoji_gsub.py",
+            "add_emoji_gsub"
+        )?;
+
         let map_pua_module = PyModule::from_code(
             py,
             Blobmoji::MAP_PUA_EMOJI_PY,
@@ -681,7 +884,7 @@ impl Blobmoji {
     fn add_vs_cmap(&self) -> PyResult<()> {
         let gil = Python::acquire_gil();
         let py = gil.python();
-        let vs_mapper = PyModule::import(py, "nototools")?.get("add_vs_cmap")?;
+        let vs_mapper = PyModule::import(py, "nototools.add_vs_cmap")?;
         //    [python3] add_vs_cmap.py -vs 2640 2642 2695 --dstdir '.' -o "<name>.ttf-with-pua-varse1" "<name>.ttf-with-pua"
         let kwargs = PyDict::new(py);
         let vs_added = HashSet::from_iter(vec![0x2640, 0x2642, 0x2695]);
@@ -694,7 +897,7 @@ impl Blobmoji {
 
         vs_mapper.call_method(
             "modify_fonts",
-            (self.build_path.join(TTF_WITH_PUA).to_string_lossy().into_owned(),),
+            (vec![self.build_path.join(TTF_WITH_PUA).to_string_lossy().into_owned()],),
             Some(kwargs)
         )?;
 
@@ -703,7 +906,7 @@ impl Blobmoji {
 }
 
 
-/// TODO: Replace this with a more intelligent and elegant solution...
+/*/// TODO: Replace this with a more intelligent and elegant solution...
 /// For some reason, resvg/raqote produces a vector of u32 values, which contain the color value for
 /// one pixel in the format BGRA (and not RGBA like it is required by the following tools).
 /// _Note: It's actually ARGB, just reversed_
@@ -711,17 +914,17 @@ fn bgra_to_rgba(data: &mut [u8]) {
     for i in (0..data.len()).step_by(4) {
         data.swap(i, i + 2);
     }
-}
+}*/
 
-#[test]
+/*#[test]
 fn test_rgba() {
     let mut bgra: Vec<u8> = vec![0, 42, 17, 21, 1, 2, 3, 4, 5, 6, 7, 8];
     bgra_to_rgba(&mut bgra);
     let rgba: Vec<u8> = vec![17, 42, 0, 21, 3, 2, 1, 4, 7, 6, 5, 8];
     assert_eq!(rgba, bgra);
-}
+}*/
 
-/// Efficiently gets the length of the hexadecimal representation of an integer
+/// Gets the length of the hexadecimal representation of an integer
 fn hex_len(mut i: u32) -> usize {
     let mut len = 0;
     while i > 0 {

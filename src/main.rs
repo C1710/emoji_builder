@@ -95,7 +95,8 @@ fn parse_emojis(args: &BuilderArguments) -> Vec<Emoji> {
 
     let images = &args.svg_path;
 
-    let paths: Vec<_> = fs::read_dir(images).unwrap().collect();
+    let paths: Vec<_> = fs::read_dir(images)
+        .expect(&format!("Couldn't find image directory: {}", images.to_string_lossy())).collect();
 
     let flag_paths: Vec<_> = match &args.flag_path {
         None => vec![],

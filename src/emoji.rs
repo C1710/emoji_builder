@@ -46,7 +46,7 @@ pub struct Emoji {
     /// This can be used in EmojiBuilders to e.g. render an emoji.
     // TODO: Maybe it would be wiser to use something else than the path to the file here.
     //       Especially, if this should ever be ported to WASM it would be useful to not use paths.
-    pub svg_path: Option<PathBuf>,
+    pub svg_path: Option<PathBuf>
 }
 
 /// An internal representation for the different emoji types represented in the Unicode® Tables

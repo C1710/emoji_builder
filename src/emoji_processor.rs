@@ -18,12 +18,11 @@ use crate::emoji::Emoji;
 use std::fmt::Debug;
 use clap::{ArgMatches, App};
 
-/// A trait that is capable of doing postprocessing for certain types of prepared emojis.
-/// This might be e.g. a PNG compressor or a masking system for flags.
+/// A trait that is capable of doing postprocessing for emojis.
+/// This might be e.g. a PNG compressor or a masking system for flags (which might then work on the SVGs).
 /// This trait is supposed to modularize the building process as certain processes might be useful
 /// for different builders.
-pub trait EmojiPostProcessor<T>: Send + Sync
-    where T: Send + Sync {
+pub trait EmojiProcessor<T>: Send + Sync {
     type Err: Debug + Send + Sync;
 
     /// Initializes a new `PostProcessor` before using it.
