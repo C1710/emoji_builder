@@ -22,7 +22,7 @@ use std::{fs, io};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 // For some reason Cursor is marked as an unused import. However that's wrong as it's used in test_nocr().
-#[allow(unused_imports)]
+#[cfg(test)]
 use std::io::Cursor;
 use std::ops::Index;
 use std::path::{Path, PathBuf};
