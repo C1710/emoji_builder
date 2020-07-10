@@ -187,6 +187,21 @@ impl EmojiBuilder for Blobmoji {
                 let fit_to = rendered.1;
                 let rendered = rendered.0;
 
+                // Before we do anything, we'll add a padding
+                let (width, height) = match fit_to {
+                    FitTo::Width(width) => (Some(width), None),
+                    FitTo::Height(height) => (None, Some(height)),
+                    _ => panic!("fit_to needs to be either Height or Width")
+                };
+
+                let image = Blobmoji::enlarge_to(
+                    &rendered,
+                    width,
+                    height,
+                    CHARACTER_WIDTH,
+                    RENDER_AND_CHARACTER_HEIGHT,
+                );
+
                 // Compress the image
                 let quantized = match self.quantize_png(&rendered) {
                     Some(quantized) => quantized,
@@ -199,7 +214,7 @@ impl EmojiBuilder for Blobmoji {
                 };
 
                 // Save it
-                self.write_png(emoji, optimized, fit_to);
+                self.write_png(emoji, optimized);
 
                 // Save the hash value of the source (to prevent unnecessary re-renders)
                 let hash = FileHashes::hash(emoji);
@@ -476,26 +491,12 @@ impl Blobmoji {
     }
 
 
-    fn write_png(&self, emoji: &Emoji, image: Vec<u8>, fit_to: FitTo) {
+    fn write_png(&self, emoji: &Emoji, image: Vec<u8>) {
         let filename = Blobmoji::generate_filename(&emoji);
         let path = self.build_path
             .join(PNG_DIR)
             .join(&PathBuf::from(filename));
         let file = File::create(path);
-
-        let (width, height) = match fit_to {
-            FitTo::Width(width) => (Some(width), None),
-            FitTo::Height(height) => (None, Some(height)),
-            _ => panic!("fit_to needs to be either Height or Width")
-        };
-
-        let image = Blobmoji::enlarge_to(
-            &image,
-            width,
-            height,
-            CHARACTER_WIDTH,
-            RENDER_AND_CHARACTER_HEIGHT,
-        );
 
         if let Ok(file) = file {
             let writer = &mut BufWriter::new(file);
