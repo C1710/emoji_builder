@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/C1710/emoji_builder.svg?branch=master)](https://travis-ci.org/C1710/emoji_builder)
+[![Travis CI build status](https://travis-ci.org/C1710/emoji_builder.svg?branch=master)](https://travis-ci.org/C1710/emoji_builder) ![GitHub Workflow build status](https://github.com/C1710/emoji_builder/workflows/Rust/badge.svg)
 
 # Emoji Builder
 _Currently under development_.
