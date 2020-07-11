@@ -28,8 +28,8 @@ pub struct TestResult<T: EmojiBuilder> {
     build_path: PathBuf,
     output_path: PathBuf,
     result: Result<(), T::Err>,
-    emojis: Vec<Emoji>,
-    table: EmojiTable,
+    _emojis: Vec<Emoji>,
+    _table: EmojiTable,
 }
 
 fn prepare<'a, T: EmojiBuilder>(emojis: &'a [Emoji], builder: &T) -> HashMap<&'a Emoji, Result<T::PreparedEmoji, T::Err>> {
@@ -43,7 +43,7 @@ fn build<T: EmojiBuilder>(emojis: HashMap<&Emoji, Result<T::PreparedEmoji, T::Er
 }
 
 fn create<T: EmojiBuilder>(build_path: PathBuf) -> T {
-    *T::new(build_path, true, None).unwrap()
+    *T::new(build_path, None).unwrap()
 }
 
 fn create_temps() -> (PathBuf, PathBuf) {
@@ -106,8 +106,8 @@ pub fn run_with_test_files<T: EmojiBuilder>() -> TestResult<T> {
         build_path,
         output_path,
         result,
-        emojis,
-        table,
+        _emojis: emojis,
+        _table: table,
     }
 }
 
