@@ -18,6 +18,8 @@
 extern crate clap;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate log;
 
 use std::collections::HashMap;
 use std::fs;
@@ -32,6 +34,7 @@ use emoji_builder::builder::EmojiBuilder;
 use emoji_builder::builders::blobmoji::Blobmoji;
 use emoji_builder::emoji::Emoji;
 use emoji_builder::emoji_tables::EmojiTable;
+use std::fs::create_dir_all;
 
 fn main() {
     build::<Blobmoji>();
@@ -40,28 +43,28 @@ fn main() {
 fn build<Builder: EmojiBuilder>() {
     let args = Builder::sub_command();
     let name = args.get_name().to_string();
-    let mut args = parse_args(vec![args]);
+    let log_modules = Builder::log_modules();
+    let mut args = parse_args(vec![args], vec![log_modules]);
 
-    if args.verbose {
-        println!("Verbose mode enabled.");
-    }
 
     let emojis = parse_emojis(&args);
+
+    create_dir_all(&args.build_path).unwrap();
 
     // Now we are ready to start the actual build process
     let mut builder = Builder::new(
         args.build_path,
-        args.verbose,
         args.builder_matches.remove(name.as_str()).unwrap_or(None),
     ).unwrap();
 
     let output = args.output_path;
-    let prepared: HashMap<&Emoji, _> = emojis.par_iter()
+    let prepared: HashMap<&Emoji, _> =
+        emojis.par_iter()
         .map(|emoji| (emoji, builder.as_ref().prepare(emoji)))
         .collect();
     let result = builder.as_mut().build(prepared, output);
     if let Err(err) = result {
-        eprintln!("An error occured while building the emoji set: {:?}", err);
+        error!("An error occured while building the emoji set: {:?}", err);
     }
 }
 
@@ -83,14 +86,14 @@ fn parse_emojis(args: &BuilderArguments) -> Vec<Emoji> {
     let table = match table {
         Some(Ok(table)) => Some(table),
         Some(Err(err)) => {
-            eprintln!("Error in parsing the emoji tables: {}", err);
+            error!("Error in parsing the emoji tables: {}", err);
             None
         },
         None => None,
     };
 
-    if table.is_some() && args.verbose {
-        println!("Using emoji table");
+    if table.is_some() {
+        info!("Using emoji table");
     }
 
     let images = &args.svg_path;
@@ -130,22 +133,29 @@ struct BuilderArguments<'a> {
     tables_path: Option<PathBuf>,
     build_path: PathBuf,
     output_path: PathBuf,
-    verbose: bool,
     builder_matches: HashMap<String, Option<ArgMatches<'a>>>,
 }
 
-fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>) -> BuilderArguments<'a> {
+fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<String>>) -> BuilderArguments<'a> {
     lazy_static! {
         static ref YAML: Yaml = load_yaml!("cli.yaml").clone();
     }
     let names: Vec<String> = builder_args.iter().map(|args| String::from(args.get_name())).collect();
+    let log_modules = builder_log_modules
+        .into_iter()
+        .flatten();
     let app: App<'a, 'a> = App::from_yaml(&YAML)
         .version(crate_version!())
         .subcommands(builder_args);
     let matches: ArgMatches = app
         .get_matches();
 
-    let verbose = matches.is_present("verbose");
+    stderrlog::new()
+        .module(module_path!())
+        .modules(log_modules)
+        .verbosity(matches.occurrences_of("verbose") as usize)
+        .init().unwrap();
+
     let images: PathBuf = matches.value_of("images").unwrap().into();
     let flags = matches.value_of("flags");
     let tables = matches.value_of("tables");
@@ -181,7 +191,6 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>) -> BuilderArguments<'a> {
         tables_path: tables,
         build_path: build,
         output_path,
-        verbose,
         builder_matches,
     }
 }

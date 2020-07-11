@@ -60,14 +60,13 @@ impl EmojiBuilder for DummyBuilder {
 
     fn new(
         _build_dir: PathBuf,
-        _verbose: bool,
         _arguments: Option<ArgMatches>,
     ) -> Result<Box<Self>, Self::Err> {
         Ok(Box::new(DummyBuilder()))
     }
 
     fn prepare(&self, emoji: &Emoji) -> Result<Self::PreparedEmoji, Self::Err> {
-        println!("Loading emoji {}.", emoji);
+        info!("Loading emoji {}.", emoji);
         let hash = FileHashes::hash(emoji);
         match hash {
             Ok(hash) => Ok(Vec::from(hash.as_slice())),
@@ -84,7 +83,7 @@ impl EmojiBuilder for DummyBuilder {
         for emoji in emojis {
             let hash = emoji.1;
             let emoji = emoji.0;
-            println!("Saving hash for emoji {}.", emoji);
+            info!("Saving hash for emoji {}.", emoji);
             match hash {
                 Ok(hash) => hashes.update(emoji, &hash),
                 // Yes, it will crash on even one error

@@ -24,7 +24,9 @@ args:
   - verbose:
       short: v
       long: verbose
-      help: Prints additional information on the build process
+      multiple: true
+      help: Specify the verbosity level 
+      long_help: -v displays warnings, -vv displays additional information, -vvv debug information. Errors are always displayed
   - build:
       short: b
       long: build

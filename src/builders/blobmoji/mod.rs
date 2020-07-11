@@ -26,8 +26,8 @@
 //! [filemojicompat]: https://github.com/c1710/filemojicompat
 
 use std::collections::{HashMap, HashSet};
-use std::fs::{File, remove_file, create_dir_all, rename};
-use std::io::{BufWriter, Write};
+use std::fs::{File, remove_file, create_dir_all, rename, copy};
+use std::io::Write;
 use std::path::PathBuf;
 
 use clap::{App, ArgMatches, SubCommand, Arg};
@@ -47,13 +47,14 @@ use std::str::FromStr;
 use pyo3::types::{PyDict, PyString, PyTuple};
 use std::iter::FromIterator;
 use usvg::{FitTo, SystemFontDB};
+use png::ColorType::RGBA;
+use png::BitDepth::Eight;
+use png::EncodingError;
 
 #[allow(dead_code)]
 pub struct Blobmoji {
     build_path: PathBuf,
-    name: Option<String>,
     hashes: FileHashes,
-    verbose: bool,
     aliases: Option<PathBuf>,
     render_only: bool,
     default_font: String,
@@ -82,7 +83,6 @@ impl EmojiBuilder for Blobmoji {
 
     fn new(
         build_path: PathBuf,
-        verbose: bool,
         matches: Option<ArgMatches>,
     ) -> Result<Box<Self>, Self::Err> {
         let hash_path = build_path.join(String::from(HASHES));
@@ -90,9 +90,13 @@ impl EmojiBuilder for Blobmoji {
         let hashes = match hashes {
             Ok(hashes) => hashes,
             Err(error) => {
-                if verbose {
-                    eprintln!("Couldn't load hash values: {:?}", error);
-                }
+                match error.kind() {
+                    csv::ErrorKind::Io(error) => match error.kind() {
+                        std::io::ErrorKind::NotFound => warn!("File with hashes not found, probably because it's the first build. {:?}", error),
+                        _ => error!("Couldn't load hashes: {:?}", error)
+                    },
+                    _ => error!("Couldn't load hashes: {:?}", error)
+                };
                 FileHashes::default()
             }
         };
@@ -123,10 +127,11 @@ impl EmojiBuilder for Blobmoji {
         let ttx_tmpl_path = build_path.join(TMPL_TTX_TMPL);
         if !ttx_tmpl_path.exists() {
             // TODO: Don't unwrap
+            info!("Creating new TTX template");
             let mut file = File::create(ttx_tmpl_path).unwrap();
             file.write_all(TMPL_TTX_TMPL_CONTENT).unwrap();
-        } else if verbose {
-            println!("Using existing TTX template");
+        } else {
+            info!("Using existing TTX template");
         }
 
         // Create the PNG directory if it doesn't exist
@@ -153,9 +158,7 @@ impl EmojiBuilder for Blobmoji {
 
         let builder = Box::new(Blobmoji {
             build_path,
-            name: None,
             hashes,
-            verbose,
             aliases,
             render_only,
             default_font,
@@ -165,19 +168,15 @@ impl EmojiBuilder for Blobmoji {
     }
 
     fn prepare(&self, emoji: &Emoji) -> Result<Self::PreparedEmoji, Self::Err> {
-        if self.verbose {
-            println!("Preparing {}", emoji);
-        }
+        info!("Preparing {}", emoji);
 
         // Where to store the image?
         let path = self.build_path
             .join(PNG_DIR)
             .join(PathBuf::from(Blobmoji::generate_filename(emoji)));
 
-        if self.verbose {
-            if let Err(err) = self.hashes.check(emoji) {
-                eprintln!("Hash of an emoji ({}) could not be checked: {:?}", emoji, err);
-            }
+        if let Err(err) = self.hashes.check(emoji) {
+            warn!("Hash of an emoji ({}) could not be checked: {:?}", emoji, err);
         }
 
         // Only render if sth. has changed or if it isn't available
@@ -203,31 +202,34 @@ impl EmojiBuilder for Blobmoji {
                 );
 
                 // Compress the image
-                let quantized = match self.quantize_png(&rendered) {
+                let quantized = match self.quantize_png(image) {
                     Some(quantized) => quantized,
-                    None => &rendered,
+                    None => rendered,
                 };
 
-                let optimized = match self.optimize_png(quantized) {
+                let encoded = Blobmoji::pixels_to_png(&quantized).unwrap();
+
+                let optimized = match self.optimize_png(&encoded) {
                     Ok(optimized) => optimized,
-                    Err(_) => Vec::from(quantized),
+                    Err(e) => {
+                        warn!("Error in optimizing {:?}: {:?}", emoji, e);
+                        encoded
+                    },
                 };
 
                 // Save it
-                self.write_png(emoji, optimized);
+                self.write_png(emoji, optimized).unwrap();
 
                 // Save the hash value of the source (to prevent unnecessary re-renders)
                 let hash = FileHashes::hash(emoji);
 
                 Ok((path, hash))
             } else {
-                eprintln!("Couldn't render Emoji {}", emoji);
+                error!("Couldn't render Emoji {}", emoji);
                 Err(())
             }
         } else {
-            if self.verbose {
-                println!("Emoji is already available");
-            }
+            info!("Emoji is already available");
             let hash = &self.hashes[emoji];
             // As the hash values can be assumed to be generated just like above,
             // We can safely assume their size to be like this
@@ -241,36 +243,11 @@ impl EmojiBuilder for Blobmoji {
     fn build(
         &mut self,
         emojis: HashMap<&Emoji, Result<Self::PreparedEmoji, Self::Err>>,
-        _output_file: PathBuf,
+        output_file: PathBuf,
     ) -> Result<(), Self::Err> {
         assert!(emojis.len() > 0);
-        // Collect all errors that occurred while checking the hashes and save those that were successful
-        let hashing_errors = emojis.iter()
-            .filter_map(|(emoji, result)| match result {
-                Ok((_, hash)) => Some((emoji, hash)),
-                Err(_) => None
-            })
-            .filter_map(|(emoji, hash)|
-                match hash {
-                    Ok(hash) => {
-                        // Update the hash value
-                        self.hashes.update(emoji, hash);
-                        None
-                    },
-                    Err(error) => Some((emoji, error))
-                })
-            .collect_vec();
 
-        // Save all hashes
-        let saving_results = self.hashes.write_to_path(self.build_path.join(HASHES));
-
-        for (emoji, err) in hashing_errors {
-            eprintln!("Error in updating a hash value for emoji {}: {:?}", emoji, err);
-        }
-        if let Err(err) = saving_results {
-            eprintln!("Error in writing the new hash values: {:?}\n\
-            All emojis will be re-rendered the next time.", err);
-        }
+        self.store_prepared(emojis);
 
         if !self.render_only {
             // TODO: Build the font (the following steps are copied from the original Makefile
@@ -302,9 +279,7 @@ impl EmojiBuilder for Blobmoji {
             //       - Implement
 
             // TODO: Handle errors
-            if self.verbose {
-                println!("Adding glyphs");
-            }
+            info!("Adding glyphs");
             match self.add_glyphs(
                 &emojis,
                 self.build_path.join(TMPL_TTX_TMPL),
@@ -324,9 +299,7 @@ impl EmojiBuilder for Blobmoji {
                 remove_file(tmpl_ttf).unwrap();
             }
 
-            if self.verbose {
-                println!("Building TTF");
-            }
+            info!("Building TTF");
             match self.build_ttf() {
                 Ok(_) => (),
                 Err(err) => {
@@ -337,9 +310,7 @@ impl EmojiBuilder for Blobmoji {
                 }
             };
 
-            if self.verbose {
-                println!("Doing... something");
-            }
+            info!("Doing... something");
             match self.emoji_builder() {
                 Ok(_) => (),
                 Err(err) => {
@@ -350,9 +321,7 @@ impl EmojiBuilder for Blobmoji {
                 }
             };
 
-            if self.verbose {
-                println!("Mapping PUA");
-            }
+            info!("Mapping PUA");
             match self.map_pua() {
                 Ok(_) => (),
                 Err(err) => {
@@ -363,9 +332,7 @@ impl EmojiBuilder for Blobmoji {
                 }
             };
 
-            if self.verbose {
-                println!("Adding Version Selector");
-            }
+            info!("Adding Version Selector");
             match self.add_vs_cmap() {
                 Ok(_) => (),
                 Err(err) => {
@@ -380,6 +347,8 @@ impl EmojiBuilder for Blobmoji {
                 self.build_path.join(TTF_WITH_PUA_VARSE1),
                 self.build_path.join(TTF)
             ).unwrap();
+
+            copy(self.build_path.join(TTF), output_file).unwrap();
 
             remove_file(self.build_path.join(TTF_WITH_PUA)).unwrap();
             remove_file(self.build_path.join(TMPL_TTX)).unwrap();
@@ -427,6 +396,18 @@ impl EmojiBuilder for Blobmoji {
                 .required(false)
                 .value_name("FILE/DIR")
                 .multiple(true))
+    }
+
+    fn log_modules() -> Vec<String> {
+        vec![
+            String::from("oxipng"),
+            String::from(module_path!())
+        ]
+    }
+
+    fn finish(&mut self, emojis: HashMap<&Emoji, Result<Self::PreparedEmoji, Self::Err>>) -> Result<(), Self::Err> {
+        self.store_prepared(emojis);
+        Ok(())
     }
 }
 
@@ -476,46 +457,51 @@ impl Blobmoji {
                     let data = img.take();
                     Some((data, fit_to))
                 } else {
-                    eprintln!("Failed to render {}", emoji);
+                    error!("Failed to render {}", emoji);
                     None
                 }
             } else {
                 let err = tree.err().unwrap();
-                eprintln!("Error in loading the SVG file for {}: {:?}", emoji, err);
+                error!("Error in loading the SVG file for {}: {:?}", emoji, err);
                 None
             }
         } else {
-            eprintln!("No file available for {}", emoji);
+            error!("No file available for {}", emoji);
             None
         }
     }
 
+    fn pixels_to_png(img: &[u8]) -> Result<Vec<u8>, EncodingError> {
+        // According to this post, PNG files have a header of 8 bytes: https://stackoverflow.com/questions/10423942/what-is-the-header-size-of-png-jpg-jpeg-bmp-gif-and-other-common-graphics-for
+        let mut png_target = Vec::with_capacity(img.len() + 8);
+        let mut encoder = png::Encoder::new(&mut png_target, CHARACTER_WIDTH, RENDER_AND_CHARACTER_HEIGHT);
+        encoder.set_color(RGBA);
+        encoder.set_depth(Eight);
+        let mut writer = encoder.write_header()?;
+        writer.write_image_data(img)?;
+        // writer still borrows png_target. Fortunately we don't need it anymore
+        std::mem::drop(writer);
+        Ok(png_target)
+    }
 
-    fn write_png(&self, emoji: &Emoji, image: Vec<u8>) {
+    /// Saves the already encoded PNG file
+    fn write_png(&self, emoji: &Emoji, image: Vec<u8>) -> std::io::Result<()> {
         let filename = Blobmoji::generate_filename(&emoji);
         let path = self.build_path
             .join(PNG_DIR)
             .join(&PathBuf::from(filename));
-        let file = File::create(path);
-
-        if let Ok(file) = file {
-            let writer = &mut BufWriter::new(file);
-
-            let mut encoder = png::Encoder::new(writer, CHARACTER_WIDTH, RENDER_AND_CHARACTER_HEIGHT);
-            encoder.set_color(png::ColorType::RGBA);
-            encoder.set_depth(png::BitDepth::Eight);
-            let mut writer = encoder.write_header().unwrap();
-            writer.write_image_data(&image).unwrap();
-        }
+        let mut file = File::create(path)?;
+        file.write_all(&image)
     }
 
-    fn quantize_png<'a>(&self, img: &'a [u8]) -> Option<&'a [u8]> {
+    fn quantize_png<'a>(&self, img: Vec<u8>) -> Option<Vec<u8>> {
         // Unfortunately the library that's originally used here, is not (at least not easily)
         // compatible with Windows 10.
         // There exists an updated versions, but the license that's used there is too restrictive.
         Some(img)
     }
 
+    /// Runs `oxipng` on the image. It has to be encoded as PNG first
     fn optimize_png(&self, img: &[u8]) -> PngResult<Vec<u8>> {
         let mut opt = oxipng::Options::default();
         opt.fix_errors = true;
@@ -523,11 +509,6 @@ impl Blobmoji {
         opt.color_type_reduction = true;
         opt.palette_reduction = true;
         opt.bit_depth_reduction = true;
-        opt.verbosity = if self.verbose {
-            Some(1)
-        } else {
-            None
-        };
 
         optimize_from_memory(img, &opt)
     }
@@ -547,10 +528,10 @@ impl Blobmoji {
     ) -> Vec<u8> {
         // The padding will be added as follows:
         //
-        // |  pad_vert   |
+        // |  pad_vert   |  pad_vert = padding vertical
         // |-------------|
         // |  |      |   |
-        // |ph| cont |ph |
+        // |ph| cont |ph |  ph = padding horizontal
         // |  |      |   |
         // |-------------|
         // |  pad_vert   |
@@ -843,9 +824,7 @@ impl Blobmoji {
             // The directory with all the PNGs and a /emoji_u(?)
             .arg("")
             .stderr(Stdio::inherit())
-            .stdout(if self.verbose {
-                Stdio::inherit()
-            } else { Stdio::null() })
+            .stdout(Stdio::inherit())
             .spawn()?.wait()?;
         assert!(exit.success());*/
 
@@ -891,8 +870,7 @@ impl Blobmoji {
         let vs_added = HashSet::from_iter(vec![0x2640, 0x2642, 0x2695]);
 
         kwargs.set_item("presentation", "'emoji'")?;
-        kwargs.set_item("output", self.build_path.join(format!("{}-{}", TTF_WITH_PUA, "varse1"))
-                .to_string_lossy().as_ref())?;
+        kwargs.set_item("output", format!("{}-{}", TTF_WITH_PUA, "varse1"))?;
         kwargs.set_item("dst_dir", self.build_path.to_string_lossy().into_owned())?;
         kwargs.set_item("vs_added", vs_added)?;
 
@@ -903,6 +881,36 @@ impl Blobmoji {
         )?;
 
         Ok(())
+    }
+
+    fn store_prepared(&mut self, emojis: HashMap<&Emoji, Result<<Blobmoji as EmojiBuilder>::PreparedEmoji, <Blobmoji as EmojiBuilder>::Err>>) {
+        // Collect all errors that occurred while checking the hashes and save those that were successful
+        let hashing_errors = emojis.iter()
+            .filter_map(|(emoji, result)| match result {
+                Ok((_, hash)) => Some((emoji, hash)),
+                Err(_) => None
+            })
+            .filter_map(|(emoji, hash)|
+                match hash {
+                    Ok(hash) => {
+                        // Update the hash value
+                        self.hashes.update(emoji, hash);
+                        None
+                    },
+                    Err(error) => Some((emoji, error))
+                })
+            .collect_vec();
+
+        // Save all hashes
+        let saving_results = self.hashes.write_to_path(self.build_path.join(HASHES));
+
+        for (emoji, err) in hashing_errors {
+            error!("Error in updating a hash value for emoji {}: {:?}", emoji, err);
+        }
+        if let Err(err) = saving_results {
+            error!("Error in writing the new hashes: {:?}\n\
+            All emojis will be re-rendered the next time.", err);
+        }
     }
 }
 

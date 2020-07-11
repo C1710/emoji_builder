@@ -22,6 +22,7 @@ use clap::{ArgMatches, App};
 /// This might be e.g. a PNG compressor or a masking system for flags (which might then work on the SVGs).
 /// This trait is supposed to modularize the building process as certain processes might be useful
 /// for different builders.
+/// NOTICE: This trait is anything but ready! Anything might change at any time
 pub trait EmojiProcessor<T>: Send + Sync {
     type Err: Debug + Send + Sync;
 
@@ -31,7 +32,6 @@ pub trait EmojiProcessor<T>: Send + Sync {
     /// The command line arguments from `clap` that have been specified by `sub_command` are
     /// passed here.
     fn new(
-        verbose: bool,
         arguments: Option<ArgMatches>,
     ) -> Result<Box<Self>, Self::Err>;
 
@@ -49,5 +49,12 @@ pub trait EmojiProcessor<T>: Send + Sync {
     ///
     /// The resulting argument match is returned in the `new` function.
     fn sub_command<'a, 'b>() -> App<'a, 'b>;
+
+    /// The names of additional modules to enable logging for.
+    /// It might be necessary to include the module itself by adding `String::from(module_path!())`
+    /// to the `Vec`
+    fn log_modules() -> Vec<String> {
+        vec![String::from(module_path!())]
+    }
 }
 

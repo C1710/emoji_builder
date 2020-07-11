@@ -40,15 +40,15 @@ pub trait EmojiBuilder: Send + Sync {
     /// passed here.
     fn new(
         build_dir: PathBuf,
-        verbose: bool,
         arguments: Option<ArgMatches>,
     ) -> Result<Box<Self>, Self::Err>;
 
-    /// Called when the builder is supposed to stop its work.
+    /// Called when the builder is supposed to stop its work early.
     ///
-    /// The difference to the `Drop` trait is that
-    /// this might be called before the builder is actually dropped and an error may be returned.
-    fn finish(&self) -> Result<(), Self::Err> {
+    /// The difference to the `Drop` trait is that the builder has a chance to
+    /// store already prepared emojis for easier caching.
+    fn finish(&mut self,
+              _emojis: HashMap<&Emoji, Result<Self::PreparedEmoji, Self::Err>>) -> Result<(), Self::Err> {
         Ok(())
     }
 
@@ -106,7 +106,13 @@ pub trait EmojiBuilder: Send + Sync {
     ///
     /// The resulting argument match is returned in the `new` function.
     fn sub_command<'a, 'b>() -> App<'a, 'b>;
-    
+
+    /// The names of additional modules to enable logging for.
+    /// It might be necessary to include the module itself by adding `String::from(module_path!())`
+    /// to the `Vec`
+    fn log_modules() -> Vec<String> {
+        vec![String::from(module_path!())]
+    }
 }
 
 pub enum ResetError<T> {

@@ -16,6 +16,8 @@
 
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate log;
 
 pub mod builder;
 pub mod builders;
@@ -23,7 +25,6 @@ pub mod changes;
 pub mod emoji;
 pub mod emoji_tables;
 pub mod emoji_processor;
-pub mod emoji_processors;
 
 #[cfg(test)]
 mod tests;
