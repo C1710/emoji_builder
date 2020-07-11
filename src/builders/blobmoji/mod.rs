@@ -70,7 +70,7 @@ const TTF_WITH_PUA: &str = "font.ttf-with-pua";
 const TTF_WITH_PUA_VARSE1: &str = "font.ttf-with-pua-varse1";
 const PNG_DIR: &str = "png";
 
-const TMPL_TTX_TMPL_CONTENT: &'static [u8] = include_bytes!("noto-emoji/NotoColorEmoji.tmpl.ttx.tmpl");
+const TMPL_TTX_TMPL_CONTENT: &[u8] = include_bytes!("noto-emoji/NotoColorEmoji.tmpl.ttx.tmpl");
 
 impl EmojiBuilder for Blobmoji {
     type Err = ();
@@ -145,14 +145,12 @@ impl EmojiBuilder for Blobmoji {
 
         // Load all the additional fonts
         if let Some(additional_fonts) = addtional_fonts {
-            additional_fonts.into_iter()
-                .map(|font_path| PathBuf::from(font_path))
+            additional_fonts
+                .map(PathBuf::from)
                 .for_each(|font_path| if font_path.is_file() {
                     fontdb.load_font_file(font_path).unwrap()
-                } else {
-                    if font_path.is_dir() {
-                        fontdb.load_fonts_dir(font_path)
-                    }
+                } else if font_path.is_dir() {
+                    fontdb.load_fonts_dir(font_path)
                 });
         }
 
@@ -245,9 +243,9 @@ impl EmojiBuilder for Blobmoji {
         emojis: HashMap<&Emoji, Result<Self::PreparedEmoji, Self::Err>>,
         output_file: PathBuf,
     ) -> Result<(), Self::Err> {
-        assert!(emojis.len() > 0);
+        assert!(!emojis.is_empty());
 
-        self.store_prepared(emojis);
+        self.store_prepared(&emojis);
 
         if !self.render_only {
             // TODO: Build the font (the following steps are copied from the original Makefile
@@ -406,7 +404,7 @@ impl EmojiBuilder for Blobmoji {
     }
 
     fn finish(&mut self, emojis: HashMap<&Emoji, Result<Self::PreparedEmoji, Self::Err>>) -> Result<(), Self::Err> {
-        self.store_prepared(emojis);
+        self.store_prepared(&emojis);
         Ok(())
     }
 }
@@ -494,7 +492,7 @@ impl Blobmoji {
         file.write_all(&image)
     }
 
-    fn quantize_png<'a>(&self, img: Vec<u8>) -> Option<Vec<u8>> {
+    fn quantize_png(&self, img: Vec<u8>) -> Option<Vec<u8>> {
         // Unfortunately the library that's originally used here, is not (at least not easily)
         // compatible with Windows 10.
         // There exists an updated versions, but the license that's used there is too restrictive.
@@ -883,7 +881,7 @@ impl Blobmoji {
         Ok(())
     }
 
-    fn store_prepared(&mut self, emojis: HashMap<&Emoji, Result<<Blobmoji as EmojiBuilder>::PreparedEmoji, <Blobmoji as EmojiBuilder>::Err>>) {
+    fn store_prepared(&mut self, emojis: &HashMap<&Emoji, Result<<Blobmoji as EmojiBuilder>::PreparedEmoji, <Blobmoji as EmojiBuilder>::Err>>) {
         // Collect all errors that occurred while checking the hashes and save those that were successful
         let hashing_errors = emojis.iter()
             .filter_map(|(emoji, result)| match result {

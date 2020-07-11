@@ -178,7 +178,7 @@ impl EmojiTable {
         Ok(())
     }
 
-    fn get_description(&self, sequence: &EmojiTableKey) -> Option<String> {
+    fn get_description(&self, sequence: &[u32]) -> Option<String> {
         match self.0.get(sequence) {
             Some((_, description)) => description.clone(),
             None => None,
