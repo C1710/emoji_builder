@@ -144,6 +144,8 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
     let log_modules = builder_log_modules
         .into_iter()
         .flatten();
+    // IntelliJ thinks this is an error, but it isn't.
+    // As you can see above, &YAML really has the type &Yaml
     let app: App<'a, 'a> = App::from_yaml(&YAML)
         .version(crate_version!())
         .subcommands(builder_args);

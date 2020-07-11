@@ -25,6 +25,8 @@
 //! [noto]: https://github.com/googlefonts/noto-emoji
 //! [filemojicompat]: https://github.com/c1710/filemojicompat
 
+mod waveflag;
+
 use std::collections::{HashMap, HashSet};
 use std::fs::{File, remove_file, create_dir_all, rename, copy};
 use std::io::Write;
@@ -59,7 +61,10 @@ pub struct Blobmoji {
     render_only: bool,
     default_font: String,
     fontdb: usvg::fontdb::Database,
+    waveflag: bool,
 }
+
+const WAVE_FACTOR: f32 = 0.1;
 
 const HASHES: &str = "hashes.csv";
 const TMPL_TTX_TMPL: &str = "font.tmpl.ttx.tmpl";
@@ -124,6 +129,11 @@ impl EmojiBuilder for Blobmoji {
             Some(matches) => matches.values_of_os("additional_fonts")
         };
 
+        let waveflag = match &matches {
+            None => false,
+            Some(matches) => matches.is_present("waveflag")
+        };
+
         let ttx_tmpl_path = build_path.join(TMPL_TTX_TMPL);
         if !ttx_tmpl_path.exists() {
             // TODO: Don't unwrap
@@ -160,7 +170,8 @@ impl EmojiBuilder for Blobmoji {
             aliases,
             render_only,
             default_font,
-            fontdb
+            fontdb,
+            waveflag
         });
         Ok(builder)
     }
@@ -179,18 +190,22 @@ impl EmojiBuilder for Blobmoji {
 
         // Only render if sth. has changed or if it isn't available
         if (!self.hashes.check(emoji).unwrap_or(false)) || (!path.exists()) {
-            // Render the SVG
-            if let Some(rendered) = self.render_svg(emoji) {
-                let fit_to = rendered.1;
-                let rendered = rendered.0;
-
-                // Before we do anything, we'll add a padding
-                let (width, height) = match fit_to {
-                    FitTo::Width(width) => (Some(width), None),
-                    FitTo::Height(height) => (None, Some(height)),
-                    _ => panic!("fit_to needs to be either Height or Width")
+            // Render the SVG to an appropriate, but unpadded size
+            if let Some((rendered, (width, height))) = self.render_svg(emoji) {
+                // Wave the flag if it is one and if we're supposed to.
+                let (rendered, width, height) = if self.waveflag && emoji.is_flag() {
+                    waveflag::waveflag(
+                        &rendered,
+                        width as usize,
+                        height,
+                        (height as f32 * WAVE_FACTOR) as usize)
+                } else {
+                    (rendered, width, height)
                 };
+                // The rendering already accounted for the case that this is a flag and that the
+                // image will get taller.
 
+                // Add the padding
                 let image = Blobmoji::enlarge_to(
                     &rendered,
                     width,
@@ -199,14 +214,16 @@ impl EmojiBuilder for Blobmoji {
                     RENDER_AND_CHARACTER_HEIGHT,
                 );
 
-                // Compress the image
+                // Compress the image for the first time
                 let quantized = match self.quantize_png(image) {
                     Some(quantized) => quantized,
                     None => rendered,
                 };
 
+                // Oxipng needs to work on PNGs and not raw pixels, so it's encoded here.
                 let encoded = Blobmoji::pixels_to_png(&quantized).unwrap();
 
+                // Lossless compression
                 let optimized = match self.optimize_png(&encoded) {
                     Ok(optimized) => optimized,
                     Err(e) => {
@@ -242,7 +259,7 @@ impl EmojiBuilder for Blobmoji {
         &mut self,
         emojis: HashMap<&Emoji, Result<Self::PreparedEmoji, Self::Err>>,
         output_file: PathBuf,
-    ) -> Result<(), Self::Err> {
+        ) -> Result<(), Self::Err> {
         assert!(!emojis.is_empty());
 
         self.store_prepared(&emojis);
@@ -394,6 +411,12 @@ impl EmojiBuilder for Blobmoji {
                 .required(false)
                 .value_name("FILE/DIR")
                 .multiple(true))
+            .arg(Arg::with_name("waveflag")
+                .short("w")
+                .long("waveflag")
+                .help("Enable if the flags should get a wavy appearance.")
+                .takes_value(false)
+                .required(false))
     }
 
     fn log_modules() -> Vec<String> {
@@ -424,8 +447,9 @@ impl Blobmoji {
     /// # Arguments
     /// * `emoji` - the emoji to be rendered
     /// # Returns
-    /// An `Option` containing the image as a vector of RGBA pixels and the larger dimension.
-    fn render_svg(&self, emoji: &Emoji) -> Option<(Vec<u8>, FitTo)> {
+    /// An `Option` containing the image as a vector of RGBA pixels and the dimensions of the
+    /// image.
+    fn render_svg(&self, emoji: &Emoji) -> Option<(Vec<u8>, (u32, u32))> {
         if let Some(svg_path) = &emoji.svg_path {
             let mut opt = usvg::Options::default();
             let path = PathBuf::from(&svg_path.as_os_str());
@@ -441,9 +465,15 @@ impl Blobmoji {
             if let Ok(tree) = tree {
                 // It's easier to get the dimensions here
                 let size = tree.svg_node().size.to_screen_size();
-                // Adjust the target size if it's taller than 128px
-                let fit_to = if size.height() > size.width() {
-                    FitTo::Height(RENDER_AND_CHARACTER_HEIGHT)
+                let wave_padding = if emoji.is_flag() && self.waveflag {
+                    (size.height() as f32 * 0.1) as u32
+                } else {
+                    0
+                };
+                // Adjust the target size if it's going to be taller than 128px
+                let fit_to = if (size.height() + wave_padding) > size.width() {
+                    // We might need to account for waving flags
+                    FitTo::Height(RENDER_AND_CHARACTER_HEIGHT - wave_padding)
                 } else {
                     FitTo::Width(RENDER_WIDTH)
                 };
@@ -452,8 +482,10 @@ impl Blobmoji {
                 let img = resvg::render(&tree, fit_to, None);
 
                 if let Some(img) = img {
+                    let width = img.width();
+                    let height = img.height();
                     let data = img.take();
-                    Some((data, fit_to))
+                    Some((data, (width, height)))
                 } else {
                     error!("Failed to render {}", emoji);
                     None
@@ -515,65 +547,66 @@ impl Blobmoji {
 
     /// Adds a transparent area around an image and puts it in the center
     /// If a delta value is odd, the image will be positioned 1 pixel left of the center.
-    ///
-    /// Will panic, if neither source width, nor source height is given
     fn enlarge_by(
         content: &[u8],
-        src_width: Option<u32>,
-        src_height: Option<u32>,
+        src_width: u32,
+        src_height: u32,
         d_width: u32,
         d_height: u32,
     ) -> Vec<u8> {
         // The padding will be added as follows:
         //
-        // |  pad_vert   |  pad_vert = padding vertical
+        // |  pad_vert   |  pad_vert = padding vertical = d_height/2
         // |-------------|
         // |  |      |   |
-        // |ph| cont |ph |  ph = padding horizontal
+        // |ph| cont |ph |  ph = padding horizontal = d_width/2
         // |  |      |   |
         // |-------------|
         // |  pad_vert   |
         // |             |
 
-        let pixels = content.len() as u32 / 4;
 
-        let (src_width, src_height) = match (src_width, src_height) {
-            (Some(width), Some(height)) => (width, height),
-            (Some(width), None) => (width, pixels / width),
-            (None, Some(height)) => (pixels / height, height),
-            (None, None) => panic!("No dimensions have been given"),
-        };
-
-        // The padding will be computed width the smaller side (if one is smaller than the other)
+        // If the delta value is odd, we need to have the left/top padding one pixel smaller.
+        // The approach here is to add the shorter padding and add a one pixel padding later.
         // If d % 2 = 1, round it down by 1,
         // If d % 2 = 0, don't round
-        // i.e., subtract d % 2!
+        // That's the same as subtracting d % 2
         let d_width_rounded = d_width - (d_width % 2);
         let d_height_rounded = d_height - (d_height % 2);
 
+        // This is what we eventually want to have
         let target_width = src_width + d_width;
         let target_height = src_height + d_height;
 
+        // The smaller padding side's lengths. As we assume that every pixel consists of 4 subpixels
+        // (RGBA), we'll need to multiply by 4 here.
         let pad_horizontal = d_width_rounded * 4;
         let pad_vertical = d_height_rounded * target_width * 4;
 
+        // Prepare the actual padding data
         let pad_horizontal = vec![0; pad_horizontal as usize / 2];
-        let pad_vertical = vec! {0; pad_vertical as usize / 2};
+        let pad_vertical = vec![0; pad_vertical as usize / 2];
 
+        // This is the target image
         let mut image = Vec::with_capacity((target_width * target_height * 4) as usize);
 
+        // Add the top padding (the shorter one)
         image.extend_from_slice(&pad_vertical);
         for line in 0..src_height as usize {
+            // Add the left padding
             image.extend_from_slice(&pad_horizontal);
+            // Add the image's line
             let start = line * src_width as usize * 4;
             let end = (line + 1) * src_width as usize * 4;
             image.extend_from_slice(&content[start..end]);
+            // Add the right padding
             image.extend_from_slice(&pad_horizontal);
-            //
+            // If necessary, add an extra pixel at the right side
             if d_width % 2 != 0 {
                 image.extend_from_slice(&Blobmoji::EMPTY_PIXEL);
             }
         }
+        // Add the bottom padding
         image.extend_from_slice(&pad_vertical);
 
         // If necessary, add an extra line at the bottom.
@@ -586,25 +619,18 @@ impl Blobmoji {
 
     fn enlarge_to(
         content: &[u8],
-        src_width: Option<u32>,
-        src_height: Option<u32>,
+        src_width: u32,
+        src_height: u32,
         target_width: u32,
         target_height: u32,
     ) -> Vec<u8> {
-        let pixels = content.len() as u32 / 4;
+        assert!(target_width >= src_width);
+        assert!(target_height >= src_height);
 
-        let (width, height) = match (src_width, src_height) {
-            (None, None) => panic!("No dimensions have been given"),
-            (None, Some(height)) => (pixels / height, height),
-            (Some(width), None) => (width, pixels / width),
-            (Some(width), Some(height)) => (width, height)
-        };
-
-        assert!(target_width >= width);
-        assert!(target_height >= height);
-
-        let d_width = target_width.saturating_sub(width);
-        let d_height = target_height.saturating_sub(height);
+        // Although the two asserts already make sure that we don't get that case, saturating_sub
+        // is used to prevent overflows.
+        let d_width = target_width.saturating_sub(src_width);
+        let d_height = target_height.saturating_sub(src_height);
         Self::enlarge_by(content, src_width, src_height, d_width, d_height)
     }
 
