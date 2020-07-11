@@ -17,7 +17,8 @@ RUN python3 -m pip install -r requirements.txt
 
 ADD . /emoji_builder
 
-RUN LD_LIBRARY_PATH=$(echo /usr/lib/python3.*/config-3.*) cargo test
+# Not sure whether tests should happen in the container build process
+# RUN LD_LIBRARY_PATH=$(echo /usr/lib/python3.*/config-3.*) cargo test
 RUN LD_LIBRARY_PATH=$(echo /usr/lib/python3.*/config-3.*) cargo build --release
 
 RUN cp target/release/emoji_builder /bin
