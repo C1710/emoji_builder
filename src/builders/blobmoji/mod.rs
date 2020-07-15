@@ -25,33 +25,33 @@
 //! [noto]: https://github.com/googlefonts/noto-emoji
 //! [filemojicompat]: https://github.com/c1710/filemojicompat
 
-mod waveflag;
-
 use std::collections::{HashMap, HashSet};
-use std::fs::{File, remove_file, create_dir_all, rename, copy};
+use std::fs::{copy, create_dir_all, File, remove_file, rename};
 use std::io::Write;
+use std::iter::FromIterator;
 use std::path::PathBuf;
+use std::str::FromStr;
 
-use clap::{App, ArgMatches, SubCommand, Arg};
+use clap::{App, Arg, ArgMatches, SubCommand};
 use itertools::Itertools;
 use oxipng::{optimize_from_memory, PngResult};
 use oxipng::internal_tests::Headers::Safe;
+use png::BitDepth::Eight;
+use png::ColorType::RGBA;
+use png::EncodingError;
+use pyo3::{IntoPy, PyResult, Python};
+use pyo3::prelude::PyModule;
+use pyo3::types::{PyDict, PyString, PyTuple};
 use sha2::{Digest, Sha256};
 use sha2::digest::generic_array::GenericArray;
+use usvg::{FitTo, SystemFontDB};
 
 use crate::builder::EmojiBuilder;
+use crate::builders;
 use crate::changes::{CheckError, FileHashes};
 use crate::emoji::Emoji;
-use crate::builders;
-use pyo3::{Python, PyResult, IntoPy};
-use pyo3::prelude::PyModule;
-use std::str::FromStr;
-use pyo3::types::{PyDict, PyString, PyTuple};
-use std::iter::FromIterator;
-use usvg::{FitTo, SystemFontDB};
-use png::ColorType::RGBA;
-use png::BitDepth::Eight;
-use png::EncodingError;
+
+mod waveflag;
 
 #[allow(dead_code)]
 pub struct Blobmoji {
@@ -402,7 +402,6 @@ impl EmojiBuilder for Blobmoji {
                 .default_value("cursive")
                 .required(false))
             .arg(Arg::with_name("additional_fonts")
-                .short("af")
                 .long("font_files")
                 .help("Additional fonts to load besides the system provided ones")
                 .long_help("Additional fonts to load besides the system provided ones. \
@@ -439,6 +438,7 @@ const RENDER_WIDTH: u32 = 128;
 /// The height of the image (it's the same when it's rendered and when it's embedded)
 const RENDER_AND_CHARACTER_HEIGHT: u32 = 128;
 
+
 impl Blobmoji {
     /// Renders a single emoji.
     /// It will not pad the image, however it will return whether it is taller than wide
@@ -466,14 +466,14 @@ impl Blobmoji {
                 // It's easier to get the dimensions here
                 let size = tree.svg_node().size.to_screen_size();
                 let wave_padding = if emoji.is_flag() && self.waveflag {
-                    (size.height() as f32 * 0.1) as u32
+                    (size.height() as f32 * WAVE_FACTOR) as u32
                 } else {
                     0
                 };
                 // Adjust the target size if it's going to be taller than 128px
                 let fit_to = if (size.height() + wave_padding) > size.width() {
                     // We might need to account for waving flags
-                    FitTo::Height(RENDER_AND_CHARACTER_HEIGHT - wave_padding)
+                    FitTo::Height((RENDER_AND_CHARACTER_HEIGHT as f32 * (1.0 - WAVE_FACTOR)) as u32)
                 } else {
                     FitTo::Width(RENDER_WIDTH)
                 };
