@@ -50,6 +50,8 @@ use crate::builder::EmojiBuilder;
 use crate::builders;
 use crate::changes::{CheckError, FileHashes};
 use crate::emoji::Emoji;
+use crate::emoji_processor::EmojiProcessor;
+use crate::emoji_processors::reduce_colors::ReduceColors;
 
 mod waveflag;
 
@@ -62,6 +64,7 @@ pub struct Blobmoji {
     default_font: String,
     fontdb: usvg::fontdb::Database,
     waveflag: bool,
+    reduce_colors: Option<ReduceColors>,
 }
 
 const WAVE_FACTOR: f32 = 0.1;
@@ -171,7 +174,8 @@ impl EmojiBuilder for Blobmoji {
             render_only,
             default_font,
             fontdb,
-            waveflag
+            waveflag,
+            reduce_colors: None,
         });
         Ok(builder)
     }
@@ -380,7 +384,7 @@ impl EmojiBuilder for Blobmoji {
     }
 
     fn sub_command<'a, 'b>() -> App<'a, 'b> {
-        SubCommand::with_name("blobmoji")
+        let subcommand = SubCommand::with_name("blobmoji")
             .version("0.1.0")
             .author("Constantin A. <emoji.builder@c1710.de>")
             .arg(Arg::with_name("aliases")
@@ -420,7 +424,9 @@ impl EmojiBuilder for Blobmoji {
                 .long("waveflag")
                 .help("Enable if the flags should get a wavy appearance.")
                 .takes_value(false)
-                .required(false))
+                .required(false));
+        let reduce_color_args = ReduceColors::cli_arguments(&subcommand.p.global_args);
+        subcommand.args(&reduce_color_args)
     }
 
     fn log_modules() -> Vec<String> {
@@ -463,7 +469,19 @@ impl Blobmoji {
             let tree = usvg::Tree::from_file(svg_path, &opt);
 
             if let Ok(tree) = tree {
-                // It's easier to get the dimensions here
+                // Reduce the colors to a certain palette if possible
+                let tree = if let Some(reduce_colors) = &self.reduce_colors {
+                    match reduce_colors.process(emoji, tree) {
+                        Ok(tree) => tree,
+                        Err((tree, err)) => {
+                            error!("Could not reduce colors on emoji {}: {:?}", &emoji, err);
+                            tree
+                        }
+                    }
+                } else {
+                    tree
+                };
+                // It's easier to get the dimensions here than at some later point
                 let size = tree.svg_node().size.to_screen_size();
                 let wave_padding = if emoji.is_flag() && self.waveflag {
                     (size.height() as f32 * WAVE_FACTOR) as u32
