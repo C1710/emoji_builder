@@ -64,7 +64,7 @@ pub struct Blobmoji {
     default_font: String,
     fontdb: usvg::fontdb::Database,
     waveflag: bool,
-    reduce_colors: Option<ReduceColors>,
+    reduce_colors: Option<Box<ReduceColors>>,
 }
 
 const WAVE_FACTOR: f32 = 0.1;
@@ -137,6 +137,35 @@ impl EmojiBuilder for Blobmoji {
             Some(matches) => matches.is_present("waveflag")
         };
 
+        let reduce_colors = match &matches {
+            None => None,
+            Some(matches) => {
+                let args = ReduceColors::cli_arguments(&Self::sub_command().p.global_args);
+                let arg_names: Vec<&str> = args.iter()
+                    .map(|arg| arg.b.name)
+                    .collect();
+                let matches: HashMap<_, _> = matches.args.iter()
+                    .filter(|(arg_name, _)| arg_names.contains(arg_name))
+                    .map(|(arg_name, matched_arg)| (*arg_name, matched_arg.clone()))
+                    .collect();
+                if let Some(reduce_colors_result) = ReduceColors::new(Some(ArgMatches {
+                    args: matches,
+                    subcommand: None,
+                    usage: None,
+                })) {
+                    match reduce_colors_result {
+                        Ok(reduce_colors) => Some(reduce_colors),
+                        Err(err) => {
+                            error!("{:?}", err);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+            }
+        };
+
         let ttx_tmpl_path = build_path.join(TMPL_TTX_TMPL);
         if !ttx_tmpl_path.exists() {
             // TODO: Don't unwrap
@@ -175,7 +204,7 @@ impl EmojiBuilder for Blobmoji {
             default_font,
             fontdb,
             waveflag,
-            reduce_colors: None,
+            reduce_colors,
         });
         Ok(builder)
     }

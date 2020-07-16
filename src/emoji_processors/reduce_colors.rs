@@ -110,22 +110,24 @@ impl EmojiProcessor<usvg::Tree> for ReduceColors {
 impl ReduceColors {
     fn closest_color(&self, old: Color) -> Color {
         if !self.palette.is_empty() && !self.palette.contains(&old) {
-            *self.palette.iter()
+            *(self.palette.iter()
                 .min_by_key(|color| color_distance(&old, color))
-                .unwrap()
+                .unwrap())
         } else {
             old
         }
     }
 }
 
-/// Currently calculates the Euclidean distance between two RGB color vectors (not very good)
-fn color_distance(a: &Color, b: &Color) -> u16 {
-    ((
-        ((a.red + b.red) as f64).powf(2.0) +
-            ((a.green + b.green) as f64).powf(2.0) +
-            ((a.blue + b.blue) as f64).powf(2.0)
-    ).sqrt()) as u16
+/// Currently "calculates" the Euclidean distance between two RGB color vectors (not very good).
+/// It won't compute the sqrt as it's not needed for comparison.
+fn color_distance(a: &Color, b: &Color) -> u32 {
+    (
+        (a.red as i32 - b.red as i32).pow(2) +
+            (a.green as i32 - b.green as i32).pow(2) +
+            (a.blue as i32 - b.blue as i32).pow(2)
+        // It will be positive and it will be below 2^18, so this cast is okay
+    ) as u32
 }
 
 impl From<Vec<Color>> for ReduceColors {
