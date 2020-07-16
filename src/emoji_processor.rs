@@ -14,9 +14,11 @@
  * limitations under the License.
  */
 
-use crate::emoji::Emoji;
 use std::fmt::Debug;
-use clap::{ArgMatches, App};
+
+use clap::{Arg, ArgMatches};
+
+use crate::emoji::Emoji;
 
 /// A trait that is capable of doing postprocessing for emojis.
 /// This might be e.g. a PNG compressor or a masking system for flags (which might then work on the SVGs).
@@ -28,27 +30,34 @@ pub trait EmojiProcessor<T>: Send + Sync {
 
     /// Initializes a new `PostProcessor` before using it.
     /// This can set up different settings.
+    /// Returns `None` if it turns out from the arguments that the processor is not supposed to be used.
     ///
-    /// The command line arguments from `clap` that have been specified by `sub_command` are
+    /// * `arguments`: The command line arguments from `clap` that have been specified by `sub_command` are
     /// passed here.
     fn new(
         arguments: Option<ArgMatches>,
-    ) -> Result<Box<Self>, Self::Err>;
+    ) -> Option<Result<Box<Self>, Self::Err>>;
 
     /// Process one particular emoji. Must be thread-safe.
     /// Does nothing by default.
     /// # Arguments
     /// * `_emoji` is the current `Emoji` it's processing. Might be used to get metadata
     /// * `prepared` is the emoji that the builder prepared and that's supposed to be processed now.
-    fn process(&self, _emoji: &Emoji, prepared: T) -> Result<T, Self::Err> {
+    /// # Returns
+    /// * Either the processed emoji image
+    /// * Or the unmodified emoji image and an error
+    fn process(&self, _emoji: &Emoji, prepared: T) -> Result<T, (T, Self::Err)> {
         Ok(prepared)
     }
 
+    // TODO: This might cause issues
     /// Lets the postprocessor define its own set of command line arguments.
-    /// It will be used as a subcommand for all appropriate builders
+    /// It will be used as additional arguments to the builder
+    ///
+    /// In order to avoid conflicts, the builder's existing argument list is passed as a parameter.
     ///
     /// The resulting argument match is returned in the `new` function.
-    fn sub_command<'a, 'b>() -> App<'a, 'b>;
+    fn cli_arguments<'a, 'b>(builder_args: &[Arg<'a, 'b>]) -> Vec<Arg<'a, 'b>>;
 
     /// The names of additional modules to enable logging for.
     /// It might be necessary to include the module itself by adding `String::from(module_path!())`

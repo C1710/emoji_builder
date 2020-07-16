@@ -176,6 +176,12 @@ impl EmojiBuilder for Blobmoji {
         Ok(builder)
     }
 
+    fn finish(&mut self, emojis: HashMap<&Emoji, Result<Self::PreparedEmoji, Self::Err>>) -> Result<(), Self::Err> {
+        self.store_prepared(&emojis);
+        Ok(())
+    }
+
+
     fn prepare(&self, emoji: &Emoji) -> Result<Self::PreparedEmoji, Self::Err> {
         info!("Preparing {}", emoji);
 
@@ -252,7 +258,6 @@ impl EmojiBuilder for Blobmoji {
             Ok((path, Ok(hash)))
         }
     }
-
 
     // TODO: Implement
     fn build(
@@ -423,11 +428,6 @@ impl EmojiBuilder for Blobmoji {
             String::from("oxipng"),
             String::from(module_path!())
         ]
-    }
-
-    fn finish(&mut self, emojis: HashMap<&Emoji, Result<Self::PreparedEmoji, Self::Err>>) -> Result<(), Self::Err> {
-        self.store_prepared(&emojis);
-        Ok(())
     }
 }
 
