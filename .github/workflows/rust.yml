@@ -5,7 +5,7 @@ on: [push]
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v2
@@ -22,7 +22,8 @@ jobs:
     - name: Build
       run: cargo build --verbose
   test:
-    runs-on: ubuntu-latest
+    # The current fonttools requires a newer Python version (maybe?)
+    runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v2
