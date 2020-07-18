@@ -40,13 +40,20 @@ def get_glyph_name_from_gsub(char_seq, font):
         return None
 
     for lookup in font['GSUB'].table.LookupList.Lookup:
-        ligatures = lookup.SubTable[0].ligatures
+        ### This line is added for emoji_builder ###
         try:
-            for ligature in ligatures[first_glyph]:
-                if ligature.Component == rest_of_glyphs:
-                    return ligature.LigGlyph
-        except KeyError:
-            continue
+            ### Thes following lines are indented for emoji_builder ###
+            ligatures = lookup.SubTable[0].ligatures
+            try:
+                for ligature in ligatures[first_glyph]:
+                    if ligature.Component == rest_of_glyphs:
+                        return ligature.LigGlyph
+            except KeyError:
+                continue
+        ### This line is added for emoji_builder ###
+        except AttributeError: # If there are no ligatures at all, it's fine as well.
+        ### This line is added for emoji_builder ###
+            pass
     return None
 
 
