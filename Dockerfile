@@ -7,8 +7,6 @@ RUN apt update && apt install -y \
     clang \
     fonts-comic-neue
 
-ENV LD_LIBRARY_PATH=""
-
 RUN mkdir emoji_builder
 WORKDIR /emoji_builder
 

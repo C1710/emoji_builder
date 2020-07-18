@@ -167,6 +167,17 @@ impl EmojiBuilder for Blobmoji {
         };
 
         let ttx_tmpl_path = build_path.join(TMPL_TTX_TMPL);
+
+        // Copy the predefined TTX_TMPL file to the destination
+        match &matches {
+            Some(matches) => match matches.value_of("ttx_tmpl") {
+                // TODO: Don't unwrap
+                Some(ttx_tmpl) => std::fs::copy(PathBuf::from(ttx_tmpl), &ttx_tmpl_path).unwrap(),
+                None => 0
+            },
+            None => 0
+        };
+
         if !ttx_tmpl_path.exists() {
             // TODO: Don't unwrap
             info!("Creating new TTX template");
@@ -453,7 +464,13 @@ impl EmojiBuilder for Blobmoji {
                 .long("waveflag")
                 .help("Enable if the flags should get a wavy appearance.")
                 .takes_value(false)
-                .required(false));
+                .required(false))
+            .arg(Arg::with_name("ttx_tmpl")
+                .long("ttx-tmpl")
+                .help("A template file for the font, e.g. containing version and author information")
+                .takes_value(true)
+                .required(false)
+                .value_name("FILE"));
         let reduce_color_args = ReduceColors::cli_arguments(&subcommand.p.global_args);
         subcommand.args(&reduce_color_args)
     }
@@ -740,7 +757,7 @@ impl Blobmoji {
             "add_emoji_gsub.py",
             "add_emoji_gsub"
         )?;
-        PyModule::from_code(
+        let add_aliases = PyModule::from_code(
             py,
             Blobmoji::ADD_ALIASES_PY,
             "add_aliases.py",
@@ -763,8 +780,8 @@ impl Blobmoji {
         // In order to use this mapping, we'll need to replace the update_ttx-function
         // This code is mostly copied from https://github.com/googlefonts/noto-emoji/blob/f8131fc45736000552cd04a8388dc414d666a829/add_glyphs.py#L353
         let aliases = match &self.aliases {
-            Some(aliases) => Some(add_glyphs_module.call1(
-                "add_aliases.read_emoji_aliases", (aliases.to_string_lossy().into_owned(),))?),
+            Some(aliases) => Some(add_aliases.call1(
+                "read_emoji_aliases", (aliases.to_string_lossy().into_owned(),))?),
             None => None
         };
 

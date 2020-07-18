@@ -50,6 +50,9 @@ fn build<Builder: EmojiBuilder>() {
     let emojis = parse_emojis(&args);
 
     create_dir_all(&args.build_path).unwrap();
+    if let Some(output_dir) = &args.output_path.parent() {
+        create_dir_all(output_dir).unwrap();
+    }
 
     // Now we are ready to start the actual build process
     let mut builder = Builder::new(
@@ -122,9 +125,15 @@ fn parse_emojis(args: &BuilderArguments) -> Vec<Emoji> {
         .map(|path| Emoji::from_path(path, &table, true));
 
 
-    emojis.chain(flags)
-        .filter_map(std::result::Result::ok)
-        .collect()
+    let emojis = emojis.chain(flags)
+        .filter_map(std::result::Result::ok);
+
+    // remove all multi character sequences if no_sequences is set
+    if args.no_sequences {
+        emojis.filter(|emoji| emoji.sequence.len() <= 1).collect()
+    } else {
+        emojis.collect()
+    }
 }
 
 struct BuilderArguments<'a> {
@@ -134,6 +143,7 @@ struct BuilderArguments<'a> {
     build_path: PathBuf,
     output_path: PathBuf,
     builder_matches: HashMap<String, Option<ArgMatches<'a>>>,
+    no_sequences: bool
 }
 
 fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<String>>) -> BuilderArguments<'a> {
@@ -167,6 +177,8 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
     let output_dir = matches.value_of("output_dir").unwrap();
     let output_path = PathBuf::from(output_dir).join(PathBuf::from(output));
 
+    let no_sequences = matches.is_present("no_sequences");
+
     let flags = match flags {
         Some(flags) => Some(PathBuf::from(flags)),
         None => None,
@@ -194,5 +206,6 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
         build_path: build,
         output_path,
         builder_matches,
+        no_sequences
     }
 }

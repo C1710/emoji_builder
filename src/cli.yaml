@@ -47,3 +47,7 @@ args:
       value_name: DIR
       help: The directory containing the finished emoji set
       default_value: ./fonts
+  - no_sequences:
+      long: no-seqs
+      takes_value: false
+      help: Only consider single character emojis
