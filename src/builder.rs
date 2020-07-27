@@ -56,19 +56,18 @@ pub trait EmojiBuilder: Send + Sync {
     /// it would if an empty directory was used.
     ///
     /// This reset might be done in a way that retains default files.
-    /// The default implementation deletes the whole directory and recreates it as a new one
+    /// The default implementation deletes all files and directories in the build directory
+    /// without following symbolic links.
     fn reset(&self, build_dir: PathBuf) -> Result<(), ResetError<Self::Err>> {
-        let parent = build_dir.parent();
-        match parent {
-            None => Err(ResetError::NoParentError),
-            Some(_) => match remove_dir_all::remove_dir_all(&build_dir) {
-                Err(err) => Err(err.into()),
-                Ok(_) => match create_dir(build_dir) {
-                    Err(err) => Err(err.into()),
-                    Ok(_) => Ok(()),
-                },
-            },
-        }
+        Ok(std::fs::read_dir(build_dir)?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .for_each(|entry| if entry.is_file() {
+                std::fs::remove_file(entry)?
+            } else if entry.is_dir() {
+                std::fs::remove_dir_all(entry)?
+            })
+        )
     }
 
     /// Preprocess a single emoji which will be later used to create the emoji set.
@@ -114,7 +113,6 @@ pub trait EmojiBuilder: Send + Sync {
 pub enum ResetError<T> {
     IoError(std::io::Error),
     BuilderError(T),
-    NoParentError,
 }
 
 impl<T> From<std::io::Error> for ResetError<T> {
