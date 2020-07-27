@@ -20,6 +20,7 @@ use std::ops::DerefMut;
 use clap::{Arg, ArgMatches};
 use gimp_palette::{NewPaletteError, Palette};
 use itertools::Itertools;
+use palette::Lab;
 use rctree::NodeEdge;
 use usvg::{Color, Paint, Tree};
 use usvg::NodeKind::{LinearGradient, Path, RadialGradient};
@@ -28,7 +29,7 @@ use crate::emoji::Emoji;
 use crate::emoji_processor::EmojiProcessor;
 
 pub struct ReduceColors {
-    palette: Vec<Color>
+    palette: Vec<Lab>
 }
 
 pub struct PaletteError(gimp_palette::NewPaletteError);
@@ -60,19 +61,19 @@ impl EmojiProcessor<usvg::Tree> for ReduceColors {
                 Path(path) => {
                     if let Some(fill) = &mut path.fill {
                         if let Paint::Color(color) = fill.paint {
-                            fill.paint = Paint::Color(self.closest_color(color))
+                            fill.paint = Paint::Color(lab_to_usvg_color(self.closest_color(to_lab(&color))))
                         };
                     };
                     if let Some(stroke) = &mut path.stroke {
                         if let Paint::Color(color) = stroke.paint {
-                            stroke.paint = Paint::Color(self.closest_color(color))
+                            stroke.paint = Paint::Color(lab_to_usvg_color(self.closest_color(to_lab(&color))))
                         };
                     };
                 }
                 LinearGradient(gradient) => (&mut gradient.base.stops).iter_mut()
-                    .for_each(|stop| stop.color = self.closest_color(stop.color)),
+                    .for_each(|stop| stop.color = lab_to_usvg_color(self.closest_color(to_lab(&stop.color)))),
                 RadialGradient(gradient) => (&mut gradient.base.stops).iter_mut()
-                    .for_each(|stop| stop.color = self.closest_color(stop.color)),
+                    .for_each(|stop| stop.color = lab_to_usvg_color(self.closest_color(to_lab(&stop.color)))),
                 _ => ()
             });
         Ok(prepared)
@@ -107,8 +108,34 @@ impl EmojiProcessor<usvg::Tree> for ReduceColors {
     }
 }
 
+fn to_lab(color: &Color) -> Lab {
+    Lab::from(palette::Srgb::new(
+        color.red as f32 / 255.0,
+        color.green as f32 / 255.0,
+        color.blue as f32 / 255.0,
+    ))
+}
+
+fn lab_to_usvg_color(lab: Lab) -> Color {
+    let rgb = palette::Srgb::from(lab);
+    Color {
+        red: (rgb.red * 255.0) as u8,
+        green: (rgb.green * 255.0) as u8,
+        blue: (rgb.blue * 255.0) as u8,
+    }
+}
+
+fn to_lab_gimp(color: &gimp_palette::Color) -> Lab {
+    Lab::from(palette::Srgb::new(
+        color.r as f32 / 255.0,
+        color.g as f32 / 255.0,
+        color.b as f32 / 255.0,
+    ))
+}
+
+
 impl ReduceColors {
-    fn closest_color(&self, old: Color) -> Color {
+    fn closest_color(&self, old: Lab) -> Lab {
         if !self.palette.is_empty() && !self.palette.contains(&old) {
             *(self.palette.iter()
                 .min_by_key(|color| color_distance(&old, color))
@@ -119,19 +146,21 @@ impl ReduceColors {
     }
 }
 
-/// Currently "calculates" the Euclidean distance between two RGB color vectors (not very good).
-/// It won't compute the sqrt as it's not needed for comparison.
-fn color_distance(a: &Color, b: &Color) -> u32 {
+
+/// Calculates the (or rather one) square of the CIE76 distance. This is only useful for comparison
+/// (At least according to https://stackoverflow.com/a/17765252)
+fn color_distance(a: &Lab, b: &Lab) -> u32 {
     (
-        (a.red as i32 - b.red as i32).pow(2) +
-            (a.green as i32 - b.green as i32).pow(2) +
-            (a.blue as i32 - b.blue as i32).pow(2)
-        // It will be positive and it will be below 2^18, so this cast is okay
+        (a.l - b.l).powf(2.0) + // in [0, 10000]
+            (a.a - b.a).powf(2.0) + // in [0, 65025]
+            (a.b - b.b).powf(2.0)   // in [0, 65025]
+        // In total it's at most 141072 which is clearly in the u32 range
     ) as u32
 }
 
-impl From<Vec<Color>> for ReduceColors {
-    fn from(palette: Vec<Color>) -> Self {
+
+impl From<Vec<Lab>> for ReduceColors {
+    fn from(palette: Vec<Lab>) -> Self {
         Self {
             palette
         }
@@ -142,7 +171,7 @@ impl From<gimp_palette::Palette> for ReduceColors {
     fn from(palette: Palette) -> Self {
         palette.get_colors()
             .iter()
-            .map(|color| Color::new(color.r, color.g, color.b))
+            .map(|color| to_lab_gimp(&color))
             .collect_vec()
             .into()
     }

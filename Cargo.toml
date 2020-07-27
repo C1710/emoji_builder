@@ -30,5 +30,6 @@ bytecount = "0.6.0"
 pyo3 = "0.11.1"
 log = "0.4.8"
 gimp_palette = "0.1.1"
+palette = "0.5.0"
 
 stderrlog = "0.4.3"

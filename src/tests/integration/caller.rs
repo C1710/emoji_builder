@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::builder::EmojiBuilder;
+use crate::builders::blobmoji::Blobmoji;
 use crate::changes::FileHashes;
 use crate::emoji::Emoji;
 use crate::emoji_tables::EmojiTable;
@@ -123,6 +124,16 @@ fn test_dummy() {
     assert!(result.output_path.exists());
     // And it should contain the correct hashes
     check_hashes(&result.output_path, &PathBuf::from(TEST_HASHES));
+}
+
+#[test]
+fn test_blobmoji() {
+    let result = run_with_test_files::<Blobmoji>();
+    // First of all, have there been any errors?
+    assert!(result.result.is_ok(),
+            "An error has occured:\n\t{:?}", result.result.unwrap_err());
+    // And there should be an output file...
+    assert!(result.output_path.exists());
 }
 
 fn check_hashes(actual: &Path, expected: &Path) {
