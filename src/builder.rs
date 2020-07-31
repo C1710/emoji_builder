@@ -17,7 +17,6 @@
 
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::fs::create_dir;
 use std::path::PathBuf;
 
 use clap::{App, ArgMatches};
@@ -56,18 +55,28 @@ pub trait EmojiBuilder: Send + Sync {
     /// it would if an empty directory was used.
     ///
     /// This reset might be done in a way that retains default files.
-    /// The default implementation deletes the whole directory and recreates it as a new one
+    /// The default implementation deletes all files and directories in the build directory
+    /// without following symbolic links.
     fn reset(&self, build_dir: PathBuf) -> Result<(), ResetError<Self::Err>> {
-        let parent = build_dir.parent();
-        match parent {
-            None => Err(ResetError::NoParentError),
-            Some(_) => match remove_dir_all::remove_dir_all(&build_dir) {
-                Err(err) => Err(err.into()),
-                Ok(_) => match create_dir(build_dir) {
-                    Err(err) => Err(err.into()),
-                    Ok(_) => Ok(()),
-                },
-            },
+        let errors: Vec<std::io::Error> = std::fs::read_dir(build_dir)?
+            // Go over all files/dirs in the build directory
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            // ...and delete them according to their type
+            .map(|entry| if entry.is_file() {
+                std::fs::remove_file(entry)
+            } else if entry.is_dir() {
+                std::fs::remove_dir_all(entry)
+            } else {
+                Ok(())
+            })
+            // Collect all errors we got (maybe some File not found errors under Windows 10)
+            .filter_map(|result| result.err())
+            .collect();
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(ResetError::IoErrors(errors))
         }
     }
 
@@ -90,15 +99,20 @@ pub trait EmojiBuilder: Send + Sync {
 
     /// Does the exact opposite to `prepare`, i.e. it assumes that the emoji
     /// has already been prepared and it undoes that operation (e.g. by deleting the file).
+    /// It is the responsibility of the controlling code to ensure that the emoji has already been
+    /// prepared, however it is possible that the builder failed in preparing that emojis, so errors
+    /// need to be handled.
     ///
     /// This function can be used to do for example speculative rendering, i.e. the emojis get
     /// prepared before the user has initiated the build and "approved" them.
+    ///
+    /// One option would be to define an Error that marks a prepared emoji as invalidated
     fn undo(
         &self,
         _emoji: &Emoji,
-        _prepared: Result<Self::PreparedEmoji, Self::Err>,
-    ) -> Result<(), Self::Err> {
-        Ok(())
+        prepared: Result<Self::PreparedEmoji, Self::Err>,
+    ) -> Result<Result<Self::PreparedEmoji, Self::Err>, Self::Err> {
+        Ok(prepared)
     }
 
     /// Lets the builder define its own set of command line arguments.
@@ -118,7 +132,7 @@ pub trait EmojiBuilder: Send + Sync {
 pub enum ResetError<T> {
     IoError(std::io::Error),
     BuilderError(T),
-    NoParentError,
+    IoErrors(Vec<std::io::Error>)
 }
 
 impl<T> From<std::io::Error> for ResetError<T> {

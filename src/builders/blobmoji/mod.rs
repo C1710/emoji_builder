@@ -50,8 +50,12 @@ use crate::builder::EmojiBuilder;
 use crate::builders;
 use crate::changes::{CheckError, FileHashes};
 use crate::emoji::Emoji;
+use crate::emoji_processor::EmojiProcessor;
+use crate::emoji_processors::reduce_colors::ReduceColors;
+use crate::builders::blobmoji::error::BlobmojiError;
 
 mod waveflag;
+pub mod error;
 
 #[allow(dead_code)]
 pub struct Blobmoji {
@@ -62,6 +66,7 @@ pub struct Blobmoji {
     default_font: String,
     fontdb: usvg::fontdb::Database,
     waveflag: bool,
+    reduce_colors: Option<Box<ReduceColors>>,
 }
 
 const WAVE_FACTOR: f32 = 0.1;
@@ -78,7 +83,7 @@ const PNG_DIR: &str = "png";
 const TMPL_TTX_TMPL_CONTENT: &[u8] = include_bytes!("noto-emoji/NotoColorEmoji.tmpl.ttx.tmpl");
 
 impl EmojiBuilder for Blobmoji {
-    type Err = ();
+    type Err = BlobmojiError;
     /// An emoji that's "prepared" here is (currently) a path (to the saved PNG file)
     /// and a hash that represents the source SVG
     type PreparedEmoji = (
@@ -105,6 +110,8 @@ impl EmojiBuilder for Blobmoji {
                 FileHashes::default()
             }
         };
+
+        // Collect all command line arguments. This is rather boring
 
         let aliases = match &matches {
             None => None,
@@ -134,12 +141,51 @@ impl EmojiBuilder for Blobmoji {
             Some(matches) => matches.is_present("waveflag")
         };
 
+        let reduce_colors = match &matches {
+            None => None,
+            Some(matches) => {
+                let args = ReduceColors::cli_arguments(&Self::sub_command().p.global_args);
+                let arg_names: Vec<&str> = args.iter()
+                    .map(|arg| arg.b.name)
+                    .collect();
+                let matches: HashMap<_, _> = matches.args.iter()
+                    .filter(|(arg_name, _)| arg_names.contains(arg_name))
+                    .map(|(arg_name, matched_arg)| (*arg_name, matched_arg.clone()))
+                    .collect();
+                if let Some(reduce_colors_result) = ReduceColors::new(Some(ArgMatches {
+                    args: matches,
+                    subcommand: None,
+                    usage: None,
+                })) {
+                    match reduce_colors_result {
+                        Ok(reduce_colors) => Some(reduce_colors),
+                        Err(err) => {
+                            error!("{:?}", err);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+            }
+        };
+
         let ttx_tmpl_path = build_path.join(TMPL_TTX_TMPL);
+
+        // Copy the predefined TTX_TMPL file to the destination
+        match &matches {
+            Some(matches) => match matches.value_of("ttx_tmpl") {
+                // TODO: Don't unwrap
+                Some(ttx_tmpl) => std::fs::copy(PathBuf::from(ttx_tmpl), &ttx_tmpl_path).unwrap(),
+                None => 0
+            },
+            None => 0
+        };
+
         if !ttx_tmpl_path.exists() {
-            // TODO: Don't unwrap
             info!("Creating new TTX template");
-            let mut file = File::create(ttx_tmpl_path).unwrap();
-            file.write_all(TMPL_TTX_TMPL_CONTENT).unwrap();
+            let mut file = File::create(ttx_tmpl_path)?;
+            file.write_all(TMPL_TTX_TMPL_CONTENT)?;
         } else {
             info!("Using existing TTX template");
         }
@@ -147,7 +193,7 @@ impl EmojiBuilder for Blobmoji {
         // Create the PNG directory if it doesn't exist
         let png_dir = build_path.join(PNG_DIR);
         if !png_dir.exists() {
-            create_dir_all(png_dir).unwrap();
+            create_dir_all(png_dir)?;
         };
 
         let mut fontdb = usvg::fontdb::Database::new();
@@ -155,14 +201,26 @@ impl EmojiBuilder for Blobmoji {
 
         // Load all the additional fonts
         if let Some(additional_fonts) = addtional_fonts {
-            additional_fonts
+            let font_errors: Vec<std::io::Error> = additional_fonts
                 .map(PathBuf::from)
-                .for_each(|font_path| if font_path.is_file() {
-                    fontdb.load_font_file(font_path).unwrap()
+                .map(|font_path| if font_path.is_file() {
+                    fontdb.load_font_file(font_path)
                 } else if font_path.is_dir() {
-                    fontdb.load_fonts_dir(font_path)
-                });
-        }
+                    fontdb.load_fonts_dir(font_path);
+                    Ok(())
+                } else {
+                    Ok(())
+                })
+                .filter_map(|result| result.err())
+                .collect();
+            if !font_errors.is_empty() {
+                Err(BlobmojiError::IoErrors(font_errors))
+            } else {
+                Ok(())
+            }
+        } else {
+            Ok(())
+        }?;
 
         let builder = Box::new(Blobmoji {
             build_path,
@@ -171,16 +229,15 @@ impl EmojiBuilder for Blobmoji {
             render_only,
             default_font,
             fontdb,
-            waveflag
+            waveflag,
+            reduce_colors,
         });
         Ok(builder)
     }
 
     fn finish(&mut self, emojis: HashMap<&Emoji, Result<Self::PreparedEmoji, Self::Err>>) -> Result<(), Self::Err> {
-        self.store_prepared(&emojis);
-        Ok(())
+        self.store_prepared(&emojis)
     }
-
 
     fn prepare(&self, emoji: &Emoji) -> Result<Self::PreparedEmoji, Self::Err> {
         info!("Preparing {}", emoji);
@@ -247,7 +304,7 @@ impl EmojiBuilder for Blobmoji {
                 Ok((path, hash))
             } else {
                 error!("Couldn't render Emoji {}", emoji);
-                Err(())
+                Err(BlobmojiError::UnknownError)
             }
         } else {
             info!("Emoji is already available");
@@ -259,6 +316,7 @@ impl EmojiBuilder for Blobmoji {
         }
     }
 
+
     // TODO: Implement
     fn build(
         &mut self,
@@ -267,7 +325,7 @@ impl EmojiBuilder for Blobmoji {
         ) -> Result<(), Self::Err> {
         assert!(!emojis.is_empty());
 
-        self.store_prepared(&emojis);
+        self.store_prepared(&emojis)?;
 
         if !self.render_only {
             // TODO: Build the font (the following steps are copied from the original Makefile
@@ -375,12 +433,29 @@ impl EmojiBuilder for Blobmoji {
             remove_file(self.build_path.join(TMPL_TTF)).unwrap();
         }
 
-        // Currently the only task is to render the emojis...
         Ok(())
     }
 
+    fn undo(&self,
+            emoji: &Emoji,
+            prepared: Result<Self::PreparedEmoji, Self::Err>
+        )  -> Result<Result<Self::PreparedEmoji, Self::Err>, Self::Err> {
+        if prepared.is_ok() {
+            // Delete the image. It will be overwritten the next time,
+            // but the building scripts might still use it
+            let filename = Blobmoji::generate_filename(emoji);
+            let path = self.build_path
+                .join(PNG_DIR)
+                .join(&PathBuf::from(filename));
+            std::fs::remove_file(path)?;
+        }
+        // When it comes to the hash-saving part, this emoji will be ignored
+        // (unless it has been re-rendered until then)
+        Ok(Err(BlobmojiError::EmojiInvalidated))
+    }
+
     fn sub_command<'a, 'b>() -> App<'a, 'b> {
-        SubCommand::with_name("blobmoji")
+        let subcommand = SubCommand::with_name("blobmoji")
             .version("0.1.0")
             .author("Constantin A. <emoji.builder@c1710.de>")
             .arg(Arg::with_name("aliases")
@@ -421,6 +496,14 @@ impl EmojiBuilder for Blobmoji {
                 .help("Enable if the flags should get a wavy appearance.")
                 .takes_value(false)
                 .required(false))
+            .arg(Arg::with_name("ttx_tmpl")
+                .long("ttx-tmpl")
+                .help("A template file for the font, e.g. containing version and author information")
+                .takes_value(true)
+                .required(false)
+                .value_name("FILE"));
+        let reduce_color_args = ReduceColors::cli_arguments(&subcommand.p.global_args);
+        subcommand.args(&reduce_color_args)
     }
 
     fn log_modules() -> Vec<String> {
@@ -463,7 +546,19 @@ impl Blobmoji {
             let tree = usvg::Tree::from_file(svg_path, &opt);
 
             if let Ok(tree) = tree {
-                // It's easier to get the dimensions here
+                // Reduce the colors to a certain palette if possible
+                let tree = if let Some(reduce_colors) = &self.reduce_colors {
+                    match reduce_colors.process(emoji, tree) {
+                        Ok(tree) => tree,
+                        Err((tree, err)) => {
+                            error!("Could not reduce colors on emoji {}: {:?}", &emoji, err);
+                            tree
+                        }
+                    }
+                } else {
+                    tree
+                };
+                // It's easier to get the dimensions here than at some later point
                 let size = tree.svg_node().size.to_screen_size();
                 let wave_padding = if emoji.is_flag() && self.waveflag {
                     (size.height() as f32 * WAVE_FACTOR) as u32
@@ -654,7 +749,6 @@ impl Blobmoji {
     const ADD_ALIASES_PY: &'static str = include_str!("add_glyphs/add_aliases.py");
     const ADD_EMOJI_GSUB_PY: &'static str = include_str!("add_glyphs/add_emoji_gsub.py");
 
-    // TODO: Implement
     fn add_glyphs(&self,
                   emojis: &HashMap<&Emoji, Result<
                       <builders::blobmoji::Blobmoji as EmojiBuilder>::PreparedEmoji,
@@ -693,7 +787,7 @@ impl Blobmoji {
             "add_emoji_gsub.py",
             "add_emoji_gsub"
         )?;
-        PyModule::from_code(
+        let add_aliases = PyModule::from_code(
             py,
             Blobmoji::ADD_ALIASES_PY,
             "add_aliases.py",
@@ -716,8 +810,8 @@ impl Blobmoji {
         // In order to use this mapping, we'll need to replace the update_ttx-function
         // This code is mostly copied from https://github.com/googlefonts/noto-emoji/blob/f8131fc45736000552cd04a8388dc414d666a829/add_glyphs.py#L353
         let aliases = match &self.aliases {
-            Some(aliases) => Some(add_glyphs_module.call1(
-                "add_aliases.read_emoji_aliases", (aliases.to_string_lossy().into_owned(),))?),
+            Some(aliases) => Some(add_aliases.call1(
+                "read_emoji_aliases", (aliases.to_string_lossy().into_owned(),))?),
             None => None
         };
 
@@ -788,8 +882,6 @@ impl Blobmoji {
     const PNG_PY: &'static str = include_str!("color_emoji/png.py");
 
     fn emoji_builder(&self) -> PyResult<()> {
-        // TODO: Do with PyO3
-        // This is too complicated to do with PyO3
         // TODO: We need access to that file. Embedding with include_str! is probably easier
         /*let emoji_builder_path: PathBuf =
             ["noto-emoji", "third_party", "color_emoji", "emoji_builder.py"]
@@ -836,21 +928,6 @@ impl Blobmoji {
         )?;
 
         emoji_builder_module.call1("main", (argv,))?;
-
-
-        /*// TODO: Don't use a fixed python executable name
-        let exit = Command::new("python3")
-            .arg(emoji_builder_path)
-            .arg("-S")
-            .arg("-V")
-            .arg(self.build_path.join(TMPL_TTF))
-            .arg(self.build_path.join(TTF))
-            // The directory with all the PNGs and a /emoji_u(?)
-            .arg("")
-            .stderr(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .spawn()?.wait()?;
-        assert!(exit.success());*/
 
         Ok(())
     }
@@ -907,11 +984,12 @@ impl Blobmoji {
         Ok(())
     }
 
-    fn store_prepared(&mut self, emojis: &HashMap<&Emoji, Result<<Blobmoji as EmojiBuilder>::PreparedEmoji, <Blobmoji as EmojiBuilder>::Err>>) {
+    fn store_prepared(&mut self, emojis: &HashMap<&Emoji, Result<<Blobmoji as EmojiBuilder>::PreparedEmoji, <Blobmoji as EmojiBuilder>::Err>>) -> Result<(), BlobmojiError> {
         // Collect all errors that occurred while checking the hashes and save those that were successful
         let hashing_errors = emojis.iter()
             .filter_map(|(emoji, result)| match result {
                 Ok((_, hash)) => Some((emoji, hash)),
+                // It's not the task of this function to handle errors
                 Err(_) => None
             })
             .filter_map(|(emoji, hash)|
@@ -931,31 +1009,15 @@ impl Blobmoji {
         for (emoji, err) in hashing_errors {
             error!("Error in updating a hash value for emoji {}: {:?}", emoji, err);
         }
-        if let Err(err) = saving_results {
-            error!("Error in writing the new hashes: {:?}\n\
-            All emojis will be re-rendered the next time.", err);
+
+        match saving_results {
+            Ok(_) => Ok(()),
+            Err(err) => Err(err.into()),
         }
     }
 }
 
 
-/*/// TODO: Replace this with a more intelligent and elegant solution...
-/// For some reason, resvg/raqote produces a vector of u32 values, which contain the color value for
-/// one pixel in the format BGRA (and not RGBA like it is required by the following tools).
-/// _Note: It's actually ARGB, just reversed_
-fn bgra_to_rgba(data: &mut [u8]) {
-    for i in (0..data.len()).step_by(4) {
-        data.swap(i, i + 2);
-    }
-}*/
-
-/*#[test]
-fn test_rgba() {
-    let mut bgra: Vec<u8> = vec![0, 42, 17, 21, 1, 2, 3, 4, 5, 6, 7, 8];
-    bgra_to_rgba(&mut bgra);
-    let rgba: Vec<u8> = vec![17, 42, 0, 21, 3, 2, 1, 4, 7, 6, 5, 8];
-    assert_eq!(rgba, bgra);
-}*/
 
 /// Gets the length of the hexadecimal representation of an integer
 fn hex_len(mut i: u32) -> usize {

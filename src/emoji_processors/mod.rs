@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Constantin A. <emoji.builder@c1710.de>
+ * Copyright 2020 Constantin A. <emoji.builder@c1710.de>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,19 +13,4 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate log;
-
-pub mod builder;
-pub mod builders;
-pub mod changes;
-pub mod emoji;
-pub mod emoji_tables;
-pub mod emoji_processor;
-pub mod emoji_processors;
-
-#[cfg(test)]
-mod tests;
+pub mod reduce_colors;
