@@ -16,15 +16,16 @@
 //! A module that allows to easily parse [Unicode® emoji data tables][unicode]
 //! (or tables in a similar format) into lookup tables and work with them.
 //!
-//! [unicode]: https://unicode.org/Public/emoji/12.0/
+//! [unicode]: https://unicode.org/Public/emoji/13.0/
 
 use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Error};
+use std::io::{BufRead, BufReader, Cursor, Error};
 use std::path::Path;
 use std::str::FromStr;
 
+use itertools::Itertools;
 use regex::Regex;
 
 use crate::emoji::EmojiKind;
@@ -80,49 +81,16 @@ impl EmojiTable {
         let mut table = EmojiTable::new();
 
         for path in paths {
-            EmojiTable::expand(&mut table, path)?;
+            EmojiTable::expand_from_file(&mut table, path)?;
         }
         Ok(table)
     }
 
-    /// Adds the entries from another Unicode® emoji data table-like file to an existing EmojiTable.
-    /// # Duplicates
-    /// If there are more than two entries for one emoji (sequence), the entry (i.e. Emoji kinds and description)
-    /// will be updated as follows:
-    /// ## Emoji kind
-    /// The `EmojiKind` vector will be updated to include the new kind found in this entry.
-    /// ## Description
-    /// If the new entry _has_ a description, the old description will be updated.
-    /// Otherwise it will stay the same as before (which might also be `None`).
-    /// # Examples
-    /// ```
-    /// use emoji_builder::emoji_tables::EmojiTable;
-    /// use emoji_builder::emoji::EmojiKind;
-    /// use std::path::PathBuf;
-    ///
-    /// let mut table = EmojiTable::new();
-    ///
-    /// let path = &PathBuf::from("test_files/tables/emoji-zwj-sequences.txt");
-    /// table.expand(path).unwrap();
-    ///
-    /// let rainbow = vec![0x1f3f3, 0xfe0f, 0x200d, 0x1f308];
-    /// let rainbow_no_fe0f = vec![0x1f3f3, 0x200d, 0x1f308];
-    ///
-    /// let rainbow_entry = (vec![EmojiKind::EmojiZwjSequence], Some(String::from("rainbow flag")));
-    ///
-    /// assert!(table.as_ref().contains_key(&rainbow));
-    /// assert!(table.as_ref().contains_key(&rainbow_no_fe0f));
-    ///
-    /// assert_eq!(*table.get(&rainbow).unwrap(), rainbow_entry);
-    /// ```
-    pub fn expand<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
+    pub fn expand<I: BufRead>(&mut self, reader: I) -> Result<(), Error> {
         lazy_static! {
             static ref HEX_SEQUENCE: Regex = Regex::new(r"[a-fA-F0-9]+").unwrap();
             static ref RANGE: Regex = Regex::new(r"([a-fA-F0-9]+)\.\.([a-fA-F0-9]+)").unwrap();
         }
-
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
 
         for line in reader.lines() {
             if let Ok(line) = line {
@@ -178,6 +146,42 @@ impl EmojiTable {
         Ok(())
     }
 
+    /// Adds the entries from another Unicode® emoji data table-like file to an existing EmojiTable.
+    /// # Duplicates
+    /// If there are more than two entries for one emoji (sequence), the entry (i.e. Emoji kinds and description)
+    /// will be updated as follows:
+    /// ## Emoji kind
+    /// The `EmojiKind` vector will be updated to include the new kind found in this entry.
+    /// ## Description
+    /// If the new entry _has_ a description, the old description will be updated.
+    /// Otherwise it will stay the same as before (which might also be `None`).
+    /// # Examples
+    /// ```
+    /// use emoji_builder::emoji_tables::EmojiTable;
+    /// use emoji_builder::emoji::EmojiKind;
+    /// use std::path::PathBuf;
+    ///
+    /// let mut table = EmojiTable::new();
+    ///
+    /// let path = &PathBuf::from("test_files/tables/emoji-zwj-sequences.txt");
+    /// table.expand_from_file(path).unwrap();
+    ///
+    /// let rainbow = vec![0x1f3f3, 0xfe0f, 0x200d, 0x1f308];
+    /// let rainbow_no_fe0f = vec![0x1f3f3, 0x200d, 0x1f308];
+    ///
+    /// let rainbow_entry = (vec![EmojiKind::EmojiZwjSequence], Some(String::from("rainbow flag")));
+    ///
+    /// assert!(table.as_ref().contains_key(&rainbow));
+    /// assert!(table.as_ref().contains_key(&rainbow_no_fe0f));
+    ///
+    /// assert_eq!(*table.get(&rainbow).unwrap(), rainbow_entry);
+    /// ```
+    pub fn expand_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        self.expand(reader)
+    }
+
     fn get_description(&self, sequence: &[u32]) -> Option<String> {
         match self.0.get(sequence) {
             Some((_, description)) => description.clone(),
@@ -224,16 +228,7 @@ impl EmojiTable {
                       kind: EmojiKind,
                       description: Option<&str>,
     ) -> (EmojiTableKey, (Vec<EmojiKind>, Option<String>)) {
-        lazy_static! {
-            static ref HEX_SEQUENCE: Regex = Regex::new(r"[a-fA-F0-9]+").unwrap();
-        }
-
-        let matches = HEX_SEQUENCE.find_iter(emoji);
-        let code_sequences: Vec<u32> = matches
-            .map(|sequence| sequence.as_str().to_string())
-            .map(|sequence| u32::from_str_radix(&sequence, 16).unwrap_or_default())
-            .filter(|codepoint| *codepoint > 0)
-            .collect();
+        let code_sequences = Self::get_codepoint_sequence(emoji);
 
         // Reallocation would be necessary anyway (because of the extension of the vector)
         let existing_kinds = self.get(&code_sequences);
@@ -251,8 +246,7 @@ impl EmojiTable {
         let existing_description = self.get_description(&code_sequences);
 
         // FIXME: There seem to be various styles for comments.
-        //        For example, the official tables have descriptions come last...
-        //        The best solution would probably to use CLDR...
+        //        For example, the official tables have descriptions come last.
         if let Some(description) = description {
             let description = description.split('#').next().unwrap_or_default().trim();
             let description = String::from(description);
@@ -260,6 +254,19 @@ impl EmojiTable {
         } else {
             (code_sequences, (kinds, existing_description))
         }
+    }
+
+    fn get_codepoint_sequence(raw_codepoints: &str) -> EmojiTableKey {
+        lazy_static! {
+            static ref HEX_SEQUENCE: Regex = Regex::new(r"[a-fA-F0-9]+").unwrap();
+        }
+
+        let matches = HEX_SEQUENCE.find_iter(raw_codepoints);
+        matches
+            .map(|sequence| sequence.as_str())
+            .map(|sequence| u32::from_str_radix(sequence, 16).unwrap_or_default())
+            .filter(|codepoint| *codepoint > 0)
+            .collect()
     }
 
     /// Inserts a new key-entry pair into the table and returns the last entry if there was one.
@@ -279,6 +286,122 @@ impl EmojiTable {
 
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    /// Uses the names of the emoji-test.txt files.
+    /// These seem to be more suitable than emoji-data.txt as they don't include any emoji character
+    /// ranges.
+    /// An example would be https://unicode.org/Public/emoji/13.0/emoji-test.txt.
+    ///
+    /// _Please note that this parser is extremely **strict** and will crash if somethind is wrong__
+    ///
+    /// The syntax of these files is:
+    /// `Codepoint ; ("component"|"fully-qualified"|"minimally-qualified"|"unqualified") # Emoji "E"Version Emoji name`
+    pub fn expand_descriptions_from_test_data<I: BufRead>(&mut self, reader: I) -> Result<(), Error> {
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                if !line.trim().starts_with('#') {
+                    let mut cols: Vec<&str> = line.split(';').collect();
+
+                    //We can make some assumptions here which we cannot make in the normal expand-function
+                    let mut status_description = cols.pop().unwrap().split('#');
+                    let codepoints = cols.pop().unwrap().trim();
+                    // We know that emoji-test.txt looks like this
+                    let _status = status_description.next().unwrap().trim();
+                    let description = status_description.next().unwrap().trim();
+
+                    let mut codepoint_sequence = Self::get_codepoint_sequence(codepoints);
+                    if codepoint_sequence.ends_with(&[0xfe0f]) {
+                        codepoint_sequence.pop();
+                    }
+
+                    if let Some((kind, _)) = self.0.remove(&codepoint_sequence) {
+                        let mut description = description.split(' ');
+                        let _emoji = description.next();
+                        let _version = description.next();
+                        let description = description.collect_vec().join(" ");
+                        self.0.insert(codepoint_sequence, (kind, Some(description)));
+                    }
+                }
+            }
+        };
+        Ok(())
+    }
+
+    const EMOJI_DATA: &'static str = "emoji-data.txt";
+    const EMOJI_SEQUENCES: &'static str = "emoji-sequences.txt";
+    const EMOJI_ZWJ_SEQUENCES: &'static str = "emoji-zwj-sequences.txt";
+    const EMOJI_TEST: &'static str = "emoji-test.txt";
+    const DATA_FILES: [&'static str; 3] = [
+        Self::EMOJI_DATA,
+        Self::EMOJI_SEQUENCES,
+        Self::EMOJI_ZWJ_SEQUENCES
+    ];
+
+    /// This function is <del>equivalent to</del> creating an `EmojiTable` and directly calling `expand_all_online` on it.`
+    #[cfg(feature = "online")]
+    pub fn load_online(version: (u32, u32)) -> Result<EmojiTable, ExpansionError> {
+        let mut table = EmojiTable::new();
+        match table.expand_all_online(version) {
+            Ok(_) => Ok(table),
+            Err(error) => Err(error)
+        }
+    }
+
+    /// Populates the table with fresh data from the internet for the given version.
+    /// # Arguments
+    /// - `version`: the main and sub version of the desired emoji set (e.g. `(13, 0)` for Emoji 13.0
+    ///   or `(12, 1)` for Emoji 12.1).
+    /// # Data sources
+    /// It will load the following files from `https://unicode.org/Public/emoji/<version>`
+    /// (e.g. `https://unicode.org/Public/emoji/13.0`):
+    /// - `emoji-data.txt`: The main list of single emoji codepoints.
+    /// - `emoji-sequences.txt`: All sequences of codepoints _without_ the `U+200D` character.
+    /// - `emoji-zwj-sequences.txt`: All sequences of codepoints _with_ the `U+200D` character.
+    /// - `emoji-test.txt`: This file will be used to get the names of all emojis.
+    #[cfg(feature = "online")]
+    pub fn expand_all_online(&mut self, version: (u32, u32)) -> Result<(), ExpansionError> {
+        let client_builder = reqwest::ClientBuilder::new();
+        let client = client_builder.build()?;
+
+        Self::DATA_FILES.iter()
+            .map(|file| self.expand_data_online(&client, version, file))
+            // TODO: Propagate errors instead of unwrapping
+            .for_each(Result::unwrap);
+
+        self.expand_descriptions_from_test_online(&client, version)
+    }
+
+    #[cfg(feature = "online")]
+    fn expand_data_online(&mut self, client: &reqwest::Client, version: (u32, u32), file: &'static str) -> Result<(), reqwest::Error> {
+        let reader = Self::get_data_file_online(client, version, file)?;
+        self.expand(reader).unwrap();
+        Ok(())
+    }
+
+    #[cfg(feature = "online")]
+    #[inline]
+    fn get_data_file_online(client: &reqwest::Client, version: (u32, u32), file: &'static str) -> Result<Cursor<bytes::Bytes>, reqwest::Error> {
+        let request = client.get(&Self::build_url(version, file)).send();
+        let bytes = futures::executor::block_on(async {
+            request.await?.bytes().await
+        })?;
+        Ok(Cursor::new(bytes))
+    }
+
+    #[cfg(feature = "online")]
+    fn expand_descriptions_from_test_online(&mut self, client: &reqwest::Client, version: (u32, u32)) -> Result<(), ExpansionError> {
+        let reader = Self::get_data_file_online(client, version, Self::EMOJI_TEST)?;
+        match self.expand_descriptions_from_test_data(reader) {
+            Ok(()) => Ok(()),
+            Err(error) => Err(error.into())
+        }
+    }
+
+    // A simple helper function to build the URLs for the different files.
+    #[inline]
+    fn build_url(version: (u32, u32), file: &'static str) -> String {
+        format!("https://unicode.org/Public/emoji/{}.{}/{}", version.0, version.1, file)
     }
 }
 
@@ -310,4 +433,31 @@ impl AsRef<HashMap<EmojiTableKey, EmojiTableEntry>> for EmojiTable {
 #[derive(Debug)]
 pub enum EmojiTableError {
     KeyNotFound(EmojiTableKey),
+}
+
+pub enum _EmojiTestStatus {
+    Component,
+    FullyQualified,
+    MinimallyQualified,
+    Unqualified,
+}
+
+#[derive(Debug)]
+pub enum ExpansionError {
+    Io(std::io::Error),
+    #[cfg(feature = "online")]
+    Reqwest(reqwest::Error),
+}
+
+impl From<std::io::Error> for ExpansionError {
+    fn from(err: std::io::Error) -> Self {
+        ExpansionError::Io(err)
+    }
+}
+
+#[cfg(feature = "online")]
+impl From<reqwest::Error> for ExpansionError {
+    fn from(err: reqwest::Error) -> Self {
+        ExpansionError::Reqwest(err)
+    }
 }
