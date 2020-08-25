@@ -269,7 +269,7 @@ impl EmojiBuilder for Blobmoji {
                 // image will get taller.
 
                 // Add the padding
-                let image = Blobmoji::enlarge_to(
+                let mut image = Blobmoji::enlarge_to(
                     &rendered,
                     width,
                     height,
@@ -277,14 +277,13 @@ impl EmojiBuilder for Blobmoji {
                     RENDER_AND_CHARACTER_HEIGHT,
                 );
 
-                // Compress the image for the first time
-                let quantized = match self.quantize_png(image) {
-                    Some(quantized) => quantized,
-                    None => rendered,
-                };
-
                 // Oxipng needs to work on PNGs and not raw pixels, so it's encoded here.
-                let encoded = Blobmoji::pixels_to_png(&quantized).unwrap();
+                // It also makes sense to do quantization at this step, if it is performed at all
+                // (which is only the case for the GPL-version which is currently not public)
+                let encoded = match self.quantize_to_png(&emoji, &mut image) {
+                    Some(quantized) => quantized,
+                    None => Blobmoji::pixels_to_png(&image).unwrap()
+                };
 
                 // Lossless compression
                 let optimized = match self.optimize_png(&encoded) {
@@ -619,11 +618,19 @@ impl Blobmoji {
         file.write_all(&image)
     }
 
-    fn quantize_png(&self, img: Vec<u8>) -> Option<Vec<u8>> {
-        // Unfortunately the library that's originally used here, is not (at least not easily)
-        // compatible with Windows 10.
-        // There exists an updated versions, but the license that's used there is too restrictive.
-        Some(img)
+    /// Performs the quantization process which apparently does some sort of posterization to reduce
+    /// the number of colors in the image.
+    /// Due to issues with the license which doesn't allow this project to be licensed under a
+    /// permissive license, this function (unfortunately) does nothing at all and is only
+    /// implemented in a fork (which is - at the moment of writing - not released).
+    ///
+    /// Errors are not returned as this would need knowledge of the error type which relies on the
+    /// library being present. Therefore any errors are directly shown (using `warn!`) inside of the
+    /// function.
+    /// This is also the reason why `emoji` is required here, it's used to generate meaningful error
+    /// messages.
+    fn quantize_to_png(&self, _emoji: &Emoji, _img: &mut [u8]) -> Option<Vec<u8>> {
+        None
     }
 
     /// Runs `oxipng` on the image. It has to be encoded as PNG first
