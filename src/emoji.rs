@@ -294,7 +294,17 @@ impl Emoji {
                 let mut emoji = if flag {
                     Emoji::from_flag(name, table)
                 } else {
-                    Emoji::from_sequence(name, table)
+                    // Try to interpret the name as a sequence, if that doesn't work,
+                    // Try to find the emoji by its name
+                    match Emoji::from_sequence(name, table) {
+                        Ok(emoji) => Ok(emoji),
+                        Err(e) => match table {
+                            // We can only look up a name if we have something where we can look it
+                            // up!
+                            Some(table) => Self::from_name(name, table),
+                            None => Err(e)
+                        }
+                    }
                 };
                 if let Ok(emoji) = &mut emoji {
                     emoji.set_path(file);
@@ -303,6 +313,18 @@ impl Emoji {
             }
         }
         Err(NotAFileName(file.to_path_buf()))
+    }
+
+    fn from_name(name: &str, table: &EmojiTable) -> Result<Emoji, EmojiError> {
+        match table.get_by_name(name) {
+            Some((sequence, (kinds, _))) => Ok(Emoji {
+                sequence: sequence.clone(),
+                name: Some(name.to_string()),
+                kinds: Some(kinds.clone()),
+                svg_path: None,
+            }),
+            None => Err(EmojiError::NoValidCodepointsFound)
+        }
     }
 
     /// Performs a lookup in the given `EmojiTable`
@@ -747,7 +769,8 @@ impl Display for Emoji {
 #[derive(Debug)]
 pub enum EmojiError {
     /// Indicates that either no codepoint sequence has been parsed or that a string didn't
-    /// match the recognized patterns for codepoint sequences.
+    /// match the recognized patterns for codepoint sequences or that the given table does not contain
+    /// the name of the emoji.
     NoValidCodepointsFound,
     /// Indicates that the given sequence could not be parsed as a flag sequence (i.e. it is not a valid
     /// ISO 3166-1/2 code).

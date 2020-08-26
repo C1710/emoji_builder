@@ -35,16 +35,16 @@ type EmojiTableEntry = (Vec<EmojiKind>, Option<String>);
 
 /// An internal representation of one or more Unicode® emoji data tables
 /// https://unicode.org/Public/emoji/12.0/
-/// It maps emoji code sequences to their kind and (if given) a description/name
+/// It maps emoji code sequences to their kind and (if given) a description/name.
 #[derive(Debug)]
 #[derive(PartialEq)]
 #[derive(Eq)]
-pub struct EmojiTable(HashMap<EmojiTableKey, EmojiTableEntry>);
+pub struct EmojiTable(HashMap<EmojiTableKey, EmojiTableEntry>, HashMap<String, EmojiTableKey>);
 
 impl EmojiTable {
     /// Creates a new, empty emoji table
     pub fn new() -> Self {
-        Self(HashMap::new())
+        Self(HashMap::new(), HashMap::new())
     }
 
     /// Reads multiple files which are formatted in the same way as the Unicode® emoji data tables
@@ -94,6 +94,7 @@ impl EmojiTable {
 
         for line in reader.lines() {
             if let Ok(line) = line {
+                // Ignore comments
                 if !line.trim().starts_with('#') {
                     let mut cols: Vec<&str> = line.split(';').collect();
 
@@ -122,16 +123,25 @@ impl EmojiTable {
                             Err(unknown_kind) => unknown_kind.into(),
                         };
 
-                        if let Some(capt) = RANGE.captures(emoji) {
-                            let (start, end) = (&capt[1], &capt[2]);
+                        if let Some(range) = RANGE.captures(emoji) {
+                            // from..to
+                            let (start, end) = (&range[1], &range[2]);
                             let extension = self.parse_range(start, end, kind).0;
                             self.0.extend(extension);
                         } else {
-                            let (seq, entry) = self.parse_sequence(emoji, kind.clone(), description);
+                            // A single sequence (or a single codepoint)
+                            let ((seq, entry), name_mapping) = self.parse_sequence(emoji, kind.clone(), description);
                             self.insert(seq, entry);
+                            // If we have a name, we can insert it as well
+                            if let Some((name, seq)) = name_mapping {
+                                self.insert_name(&name, seq);
+                            }
                             let emoji = emoji.to_lowercase();
                             if emoji.contains("fe0f") {
-                                let (seq, entry) = self.parse_sequence(
+                                // Names will be mapped to the original code sequences including the
+                                // FE0F-character.
+                                // TODO: Check this behaviour
+                                let ((seq, entry), _) = self.parse_sequence(
                                     &emoji.to_lowercase().replace("fe0f", ""),
                                     kind,
                                     description,
@@ -201,6 +211,7 @@ impl EmojiTable {
         let start = u32::from_str_radix(start, 16).unwrap();
         let end = u32::from_str_radix(end, 16).unwrap();
         let mut out_table = HashMap::new();
+        let mut names_map = HashMap::new();
         for codepoint in start..=end {
             let codepoint = vec![codepoint];
             // Reallocation would be necessary anyway (because of the extension of the vector).
@@ -217,9 +228,13 @@ impl EmojiTable {
 
             let existing_description = self.get_description(&codepoint);
 
+            if let Some(description) = &existing_description {
+                names_map.insert(description.to_lowercase(), codepoint.clone());
+            }
+
             out_table.insert(codepoint, (kinds, existing_description));
         }
-        EmojiTable(out_table)
+        EmojiTable(out_table, names_map)
     }
 
     /// Parses a regular emoji codepoint sequence and adds it including a description
@@ -227,7 +242,7 @@ impl EmojiTable {
                       emoji: &str,
                       kind: EmojiKind,
                       description: Option<&str>,
-    ) -> (EmojiTableKey, (Vec<EmojiKind>, Option<String>)) {
+    ) -> ((EmojiTableKey, (Vec<EmojiKind>, Option<String>)), Option<(String, EmojiTableKey)>) {
         let code_sequences = Self::get_codepoint_sequence(emoji);
 
         // Reallocation would be necessary anyway (because of the extension of the vector)
@@ -250,9 +265,11 @@ impl EmojiTable {
         if let Some(description) = description {
             let description = description.split('#').next().unwrap_or_default().trim();
             let description = String::from(description);
-            (code_sequences, (kinds, Some(description)))
+            let lower_description = description.to_lowercase();
+            ((code_sequences.clone(), (kinds, Some(description))),
+             Some((lower_description, code_sequences)))
         } else {
-            (code_sequences, (kinds, existing_description))
+            ((code_sequences, (kinds, existing_description)), None)
         }
     }
 
@@ -275,9 +292,64 @@ impl EmojiTable {
         self.0.insert(key, entry)
     }
 
+    /// Inserts a new name to codepoint mapping with the name normalized to lowercase and space
+    /// as a delimiter.
+    pub fn insert_name(&mut self, name: &str, key: EmojiTableKey) -> Option<EmojiTableKey> {
+        let lookup_name = Self::normalize_lookup_name(name);
+        self.1.insert(lookup_name, key)
+    }
+
     pub fn get<T: AsRef<EmojiTableKey>>(&self, index: &T) -> Option<&EmojiTableEntry> {
         let index: &EmojiTableKey = index.as_ref();
         self.0.get(index)
+    }
+
+    /// Finds an emoji by its name (this is case-insensitive and converts delimiters to the desired format)
+    /// # Examples
+    /// ```
+    /// use emoji_builder::emoji_tables::EmojiTable;
+    ///
+    /// let mut table = EmojiTable::new();
+    /// let key = vec![0x1f914];
+    /// let entry = (vec![], Some(String::from("Thinking")));
+    /// table.insert(key.clone(), entry.clone());
+    /// table.insert_name("ThInKiNg_FaCe", key.clone());
+    /// assert_eq!(Some((&key, &entry)), table.get_by_name("tHiNkIng-fAcE"));
+    ///
+    /// // If you have trouble seeing this: We're adding the emoji itself as a name
+    /// table.insert_name("🤔", key.clone());
+    /// assert_eq!(Some((&key, &entry)), table.get_by_name("🤔"));
+    /// // We don't overwrite the old mapping, so this still works
+    /// assert_eq!(Some((&key, &entry)), table.get_by_name("tHiNkIng-fAcE"));
+    /// ```
+    pub fn get_by_name(&self, name: &str) -> Option<(&EmojiTableKey, &EmojiTableEntry)> {
+        let lookup_name = Self::normalize_lookup_name(name);
+        if let Some(codepoint) = self.1.get(&lookup_name) {
+            if let Some(entry) = self.0.get(codepoint) {
+                Some((codepoint, entry))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Converts names to the format used in the lookup table for names.
+    ///
+    /// This method here might cause some issues when dealing with names with hyphens:
+    /// For example emoji U+1F60D has the name "smiling face with heart-eyes" which is converted
+    /// to "smiling face with heart eyes" here. Therefore these lookup names should not be used as
+    /// display names/descriptions.
+    ///
+    /// Also some special characters like `:` or `,` will be removed in order to allow simpler file
+    /// names.
+    pub fn normalize_lookup_name(name: &str) -> String {
+        lazy_static! {
+            static ref DELIMITERS: Regex = Regex::new(r"[-_. ]").unwrap();
+            static ref REMOVED: Regex = Regex::new(r#"[,*\\/:'"()]"#).unwrap();
+        }
+        DELIMITERS.split(&REMOVED.replace_all(name, "")).join(" ").to_lowercase()
     }
 
     pub fn len(&self) -> usize {
@@ -317,10 +389,14 @@ impl EmojiTable {
 
                     if let Some((kind, _)) = self.0.remove(&codepoint_sequence) {
                         let mut description = description.split(' ');
-                        let _emoji = description.next();
-                        let _version = description.next();
-                        let description = description.collect_vec().join(" ");
-                        self.0.insert(codepoint_sequence, (kind, Some(description)));
+                        let emoji = description.next().unwrap();
+                        let _version = description.next().unwrap();
+                        let description: String = description.collect_vec().join(" ");
+                        self.insert_name(&description, codepoint_sequence.clone());
+                        self.insert(codepoint_sequence.clone(), (kind, Some(description)));
+                        // Yes, you will be able to use the emojis as file names.
+                        // Unless your OS prevents you from doing such cursed stuff.
+                        self.insert_name(emoji, codepoint_sequence);
                     }
                 }
             }
@@ -413,7 +489,14 @@ impl Default for EmojiTable {
 
 impl From<HashMap<EmojiTableKey, EmojiTableEntry>> for EmojiTable {
     fn from(table: HashMap<Vec<u32>, (Vec<EmojiKind>, Option<String>), RandomState>) -> Self {
-        EmojiTable(table)
+        let names_map: HashMap<String, EmojiTableKey> = table
+            .iter()
+            .filter_map(|(codepoint, (_, name))| match name {
+                Some(name) => Some((name.clone(), codepoint.clone())),
+                None => None
+            })
+            .collect();
+        EmojiTable(table, names_map)
     }
 }
 
