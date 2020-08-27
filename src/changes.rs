@@ -279,10 +279,10 @@ fn test_nocr() {
 
     // Test with removing the CRs, but without any CR present
     // First create some test-data
-    let cursor = Cursor::new(vec![0x41, 0xa, 0x42]);
+    let mut cursor = Cursor::new(vec![0x41, 0xa, 0x42]);
     // Empty buffer
     let mut buf = [0x0u8; 4];
-    let read_bytes = cursor.clone().read(&mut buf).unwrap();
+    let read_bytes = cursor.read(&mut buf).unwrap();
     assert_eq!(read_bytes, 3);
     assert_eq!(buf, [0x41, 0xa, 0x42, 0x0]);
 }

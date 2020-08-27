@@ -237,12 +237,16 @@ impl EmojiTable {
         EmojiTable(out_table, names_map)
     }
 
-    /// Parses a regular emoji codepoint sequence and adds it including a description
+    /// Parses a regular emoji codepoint sequence and adds it including a description (if given)
+    /// # Arguments
+    /// `emoji`: The input string (e.g. `"1f3f fe0f 200d 26a7 fe0f"`) to be parsed
+    /// `kind`: The emoji kind to assign for this step
+    /// `description`: The name of the emoji (or `None`)
     fn parse_sequence(&self,
                       emoji: &str,
                       kind: EmojiKind,
                       description: Option<&str>,
-    ) -> ((EmojiTableKey, (Vec<EmojiKind>, Option<String>)), Option<(String, EmojiTableKey)>) {
+    ) -> ((EmojiTableKey, EmojiTableEntry), Option<(String, EmojiTableKey)>) {
         let code_sequences = Self::get_codepoint_sequence(emoji);
 
         // Reallocation would be necessary anyway (because of the extension of the vector)
@@ -288,12 +292,39 @@ impl EmojiTable {
 
     /// Inserts a new key-entry pair into the table and returns the last entry if there was one.
     /// This is simply passed on to the internal `HashMap`.
+    /// Please be aware that no name-key-mapping is inserted.
+    /// That means:
+    /// ```
+    /// use emoji_builder::emoji_tables::EmojiTable;
+    ///
+    /// let name = "thinking face";
+    /// let codepoint = vec![0x1f914];
+    /// let mut table = EmojiTable::new();
+    /// table.insert(codepoint.clone(), (vec![], Some(name.to_string())));
+    ///
+    /// // We can't find the emoji by its name!
+    /// assert_eq!(table.get_by_name(name), None);
+    /// ```
     pub fn insert(&mut self, key: EmojiTableKey, entry: EmojiTableEntry) -> Option<EmojiTableEntry> {
         self.0.insert(key, entry)
     }
 
     /// Inserts a new name to codepoint mapping with the name normalized to lowercase and space
     /// as a delimiter.
+    /// # Example
+    /// ```
+    /// use emoji_builder::emoji_tables::EmojiTable;
+    ///
+    /// let name = "thinking face";
+    /// let codepoint = vec![0x1f914];
+    /// let mut table = EmojiTable::new();
+    /// // Even if this description string is the same as the name, it does not have to be.
+    /// table.insert(codepoint.clone(), (vec![], Some(name.to_string())));
+    /// table.insert_name(name, codepoint.clone());
+    ///
+    /// assert_eq!(table.get_by_name(name), Some(name.to_string()))
+    /// ```
+    /// **Note: `insert` does __not__ insert a name mapping**
     pub fn insert_name(&mut self, name: &str, key: EmojiTableKey) -> Option<EmojiTableKey> {
         let lookup_name = Self::normalize_lookup_name(name);
         self.1.insert(lookup_name, key)
@@ -365,7 +396,8 @@ impl EmojiTable {
     /// ranges.
     /// An example would be https://unicode.org/Public/emoji/13.0/emoji-test.txt.
     ///
-    /// _Please note that this parser is extremely **strict** and will crash if somethind is wrong__
+    /// _Please note that this parser is extremely **strict** and will crash if something is wrong
+    /// with the syntax_
     ///
     /// The syntax of these files is:
     /// `Codepoint ; ("component"|"fully-qualified"|"minimally-qualified"|"unqualified") # Emoji "E"Version Emoji name`
@@ -543,4 +575,10 @@ impl From<reqwest::Error> for ExpansionError {
     fn from(err: reqwest::Error) -> Self {
         ExpansionError::Reqwest(err)
     }
+}
+
+#[cfg(test)]
+#[cfg(feature = "online")]
+fn test_online() {
+
 }
