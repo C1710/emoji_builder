@@ -577,8 +577,8 @@ impl From<reqwest::Error> for ExpansionError {
     }
 }
 
-#[cfg(test)]
 #[cfg(feature = "online")]
+#[test]
 fn test_online() {
-
+    // TODO: Implement
 }
