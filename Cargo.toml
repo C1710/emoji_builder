@@ -12,7 +12,7 @@ default = ["online"]
 online = ["reqwest", "futures", "bytes"]
 
 [dependencies]
-resvg = "0.11.0"
+resvg = "0.12.0"
 # It looks like parallel processing inside parallel processing doesn't work
 oxipng = {version = "3.0.0", default-features = false}
 regex = "1.1.6"
@@ -27,7 +27,7 @@ rayon = "1.0"
 clap = {version = "2.33", features = ["yaml"]}
 png = "0.16.5"
 tempfile = "3.0.8"
-usvg = "0.11.0"
+usvg = "0.12.0"
 digest = "0.8.0"
 yaml-rust = "0.3.5"
 rctree = "0.3"

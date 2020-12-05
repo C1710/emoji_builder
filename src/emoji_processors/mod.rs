@@ -14,3 +14,4 @@
  * limitations under the License.
  */
 pub mod reduce_colors;
+pub mod skin_color_generator;

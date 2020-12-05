@@ -310,7 +310,7 @@ impl EmojiTable {
     }
 
     /// Inserts a new name to codepoint mapping with the name normalized to lowercase and space
-    /// as a delimiter.
+    /// as a delimiter; returns the previous key that this name mapped to if there was one.
     /// # Example
     /// ```
     /// use emoji_builder::emoji_tables::EmojiTable;
@@ -322,7 +322,8 @@ impl EmojiTable {
     /// table.insert(codepoint.clone(), (vec![], Some(name.to_string())));
     /// table.insert_name(name, codepoint.clone());
     ///
-    /// assert_eq!(table.get_by_name(name), Some(name.to_string()))
+    /// // Assert that we can find an entry with the given name (and that it's the correct one)
+    /// assert_eq!(*table.get_by_name(name).unwrap().0, codepoint);
     /// ```
     /// **Note: `insert` does __not__ insert a name mapping**
     pub fn insert_name(&mut self, name: &str, key: EmojiTableKey) -> Option<EmojiTableKey> {
