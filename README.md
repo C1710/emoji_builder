@@ -13,7 +13,12 @@ winget install rustup
 winget install -e Python.Python
 ```
 
-You'll also have to provide the appropriate libraries (note: it has to be the libraries for whichever version `python` refers to): https://pyo3.rs/v0.11.1/building_and_distribution.html#linking
+You'll also have to provide the appropriate libraries (note: it has to be the libraries for whichever version `python` refers to): https://pyo3.rs/v0.11.1/building_and_distribution.html#linking  
+For example, if you installed Python 3.9 via `winget`, it should be in your `AppData\\Programs`-directory.  
+You can then set the environment variable as follows (please note that this will overwrite your `LIB` environment variable):
+```
+setx LIB C:\Users\<YourUserName>\AppData\Local\Programs\Python\Python39\libs\python39.lib
+```
 
 Currently you are also required to have `fonttools` and `notofonttools` installed in Python (you might want to use a venv for that),
 these can be installed by running `python -m pip install -r requirements.txt` (if you are in the root directory of this project)
