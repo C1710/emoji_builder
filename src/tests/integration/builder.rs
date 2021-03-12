@@ -65,11 +65,11 @@ impl EmojiBuilder for DummyBuilder {
         Ok(Box::new(DummyBuilder()))
     }
 
-    fn prepare(&self, emoji: &Emoji) -> Result<Self::PreparedEmoji, Self::Err> {
+    fn prepare(&self, emoji: &Emoji) -> Result<(Self::PreparedEmoji, Option<Vec<(Emoji, Self::PreparedEmoji)>>), Self::Err> {
         info!("Loading emoji {}.", emoji);
         let hash = FileHashes::hash(emoji);
         match hash {
-            Ok(hash) => Ok(Vec::from(hash.as_slice())),
+            Ok(hash) => Ok((Vec::from(hash.as_slice()), None)),
             Err(err) => Err(err.into())
         }
     }

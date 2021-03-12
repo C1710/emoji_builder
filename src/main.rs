@@ -63,7 +63,7 @@ fn build<Builder: EmojiBuilder>() {
     let output = args.output_path;
     let prepared: HashMap<&Emoji, _> =
         emojis.par_iter()
-        .map(|emoji| (emoji, builder.as_ref().prepare(emoji)))
+        .map(|emoji| (emoji, builder.as_ref().prepare(emoji).map(|prepared| prepared.0)))
         .collect();
     let result = builder.as_mut().build(prepared, output);
     if let Err(err) = result {

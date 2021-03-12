@@ -44,15 +44,16 @@ use pyo3::prelude::PyModule;
 use pyo3::types::{PyDict, PyString, PyTuple};
 use sha2::{Digest, Sha256};
 use sha2::digest::generic_array::GenericArray;
-use usvg::{FitTo, SystemFontDB};
+use usvg::FitTo;
 
-use crate::builder::EmojiBuilder;
+use crate::builder::{EmojiBuilder, PreparationResult};
 use crate::builders;
 use crate::changes::{CheckError, FileHashes};
 use crate::emoji::Emoji;
 use crate::emoji_processor::EmojiProcessor;
 use crate::emoji_processors::reduce_colors::ReduceColors;
 use crate::builders::blobmoji::error::BlobmojiError;
+use tiny_skia::PixmapMut;
 
 mod waveflag;
 pub mod error;
@@ -239,7 +240,7 @@ impl EmojiBuilder for Blobmoji {
         self.store_prepared(&emojis)
     }
 
-    fn prepare(&self, emoji: &Emoji) -> Result<Self::PreparedEmoji, Self::Err> {
+    fn prepare(&self, emoji: &Emoji) -> PreparationResult<Self::PreparedEmoji, Self:: Err> {
         info!("Preparing {}", emoji);
 
         // Where to store the image?
@@ -300,7 +301,7 @@ impl EmojiBuilder for Blobmoji {
                 // Save the hash value of the source (to prevent unnecessary re-renders)
                 let hash = FileHashes::hash(emoji);
 
-                Ok((path, hash))
+                Ok(((path, hash), None))
             } else {
                 error!("Couldn't render Emoji {}", emoji);
                 Err(BlobmojiError::UnknownError)
@@ -311,7 +312,7 @@ impl EmojiBuilder for Blobmoji {
             // As the hash values can be assumed to be generated just like above,
             // We can safely assume their size to be like this
             let hash: GenericArray<u8, <Sha256 as Digest>::OutputSize> = GenericArray::clone_from_slice(hash);
-            Ok((path, Ok(hash)))
+            Ok(((path, Ok(hash)), None))
         }
     }
 
@@ -533,14 +534,14 @@ impl Blobmoji {
     /// image.
     fn render_svg(&self, emoji: &Emoji) -> Option<(Vec<u8>, (u32, u32))> {
         if let Some(svg_path) = &emoji.svg_path {
-            let mut opt = usvg::Options::default();
-            let path = PathBuf::from(&svg_path.as_os_str());
-            opt.path = Some(path);
-            // Just as a fallback. Default is "cursive",
-            // which on Windows and Mac OS it will use Comic Sans
-            // which is pretty close to Comic Neue, that is used in Blobmoji
-            opt.font_family = self.default_font.clone();
-            opt.fontdb = self.fontdb.clone();
+            let opt = usvg::Options {
+                // Just as a fallback. Default is "cursive",
+                // which on Windows and Mac OS it will use Comic Sans
+                // which is pretty close to Comic Neue, that is used in Blobmoji
+                font_family: self.default_font.clone(),
+                fontdb: self.fontdb.clone(),
+                ..Default::default()
+            };
 
             let tree = usvg::Tree::from_file(svg_path, &opt);
 
@@ -572,13 +573,20 @@ impl Blobmoji {
                     FitTo::Width(RENDER_WIDTH)
                 };
 
-                // This is the point where it's actually rendered
-                let img = resvg::render(&tree, fit_to, None);
+                let mut data = Vec::with_capacity(4 * RENDER_AND_CHARACTER_HEIGHT as usize * RENDER_WIDTH as usize);
+                // It's okay to do that here as the content gets overwritten anyway
+                unsafe {
+                    data.set_len(4 * RENDER_AND_CHARACTER_HEIGHT as usize * RENDER_WIDTH as usize);
+                }
 
-                if let Some(img) = img {
-                    let width = img.width();
-                    let height = img.height();
-                    let data = img.take();
+                let pixmap = PixmapMut::from_bytes(&mut data, RENDER_WIDTH, RENDER_AND_CHARACTER_HEIGHT).unwrap();
+
+                // This is the point where it's actually rendered
+                let img = resvg::render(&tree, fit_to, pixmap);
+
+                if img.is_some() {
+                    let width = RENDER_WIDTH;
+                    let height = RENDER_AND_CHARACTER_HEIGHT;
                     Some((data, (width, height)))
                 } else {
                     error!("Failed to render {}", emoji);
@@ -635,12 +643,14 @@ impl Blobmoji {
 
     /// Runs `oxipng` on the image. It has to be encoded as PNG first
     fn optimize_png(&self, img: &[u8]) -> PngResult<Vec<u8>> {
-        let mut opt = oxipng::Options::default();
-        opt.fix_errors = true;
-        opt.strip = Safe;
-        opt.color_type_reduction = true;
-        opt.palette_reduction = true;
-        opt.bit_depth_reduction = true;
+        let opt = oxipng::Options {
+            fix_errors: true,
+            strip: Safe,
+            color_type_reduction: true,
+            palette_reduction: true,
+            bit_depth_reduction: true,
+            ..Default::default()
+        };
 
         optimize_from_memory(img, &opt)
     }

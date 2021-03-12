@@ -35,7 +35,7 @@ pub struct TestResult<T: EmojiBuilder> {
 
 fn prepare<'a, T: EmojiBuilder>(emojis: &'a [Emoji], builder: &T) -> HashMap<&'a Emoji, Result<T::PreparedEmoji, T::Err>> {
     emojis.iter()
-        .map(|emoji| (emoji, builder.prepare(emoji)))
+        .map(|emoji| (emoji, builder.prepare(emoji).map(|prepared| prepared.0)))
         .collect()
 }
 

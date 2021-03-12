@@ -325,7 +325,6 @@ impl EmojiTable {
     /// // Assert that we can find an entry with the given name (and that it's the correct one)
     /// assert_eq!(*table.get_by_name(name).unwrap().0, codepoint);
     /// ```
-    /// **Note: `insert` does __not__ insert a name mapping**
     pub fn insert_name(&mut self, name: &str, key: EmojiTableKey) -> Option<EmojiTableKey> {
         let lookup_name = Self::normalize_lookup_name(name);
         self.1.insert(lookup_name, key)

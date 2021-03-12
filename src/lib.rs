@@ -25,6 +25,7 @@ pub mod changes;
 pub mod emoji;
 pub mod emoji_tables;
 pub mod emoji_processor;
+pub mod deriving_emoji_processor;
 pub mod emoji_processors;
 
 #[cfg(test)]

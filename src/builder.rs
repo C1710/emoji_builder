@@ -24,6 +24,8 @@ use clap::{App, ArgMatches};
 use crate::builder::ResetError::IoError;
 use crate::emoji::Emoji;
 
+pub type PreparationResult<Prepared, Err> = Result<(Prepared, Option<Vec<(Emoji, Prepared)>>), Err>;
+
 /// A trait that allows custom build routines for emoji sets.
 ///
 /// Usually an `EmojiBuilder` will build an emoji font in one (or more) specific format(s), but
@@ -85,7 +87,7 @@ pub trait EmojiBuilder: Send + Sync {
     /// This function needs to be thread-safe as the preparation might be done in parallel/concurrently.
     /// It may assume that either `prepare` hasn't been called yet for this Emoji or that either
     /// `undo` or `reset` have been called.
-    fn prepare(&self, emoji: &Emoji) -> Result<Self::PreparedEmoji, Self::Err>;
+    fn prepare(&self, emoji: &Emoji) -> PreparationResult<Self::PreparedEmoji, Self::Err>;
 
     /// Builds the emoji set with the given emojis and sends the output to the specified file.
     ///
