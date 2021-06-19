@@ -407,28 +407,35 @@ impl EmojiTable {
                 if !line.trim().starts_with('#') {
                     let mut cols: Vec<&str> = line.split(';').collect();
 
-                    //We can make some assumptions here which we cannot make in the normal expand-function
-                    let mut status_description = cols.pop().unwrap().split('#');
-                    let codepoints = cols.pop().unwrap().trim();
-                    // We know that emoji-test.txt looks like this
-                    let _status = status_description.next().unwrap().trim();
-                    let description = status_description.next().unwrap().trim();
+                    let status_description = cols.pop().map(|status_description| status_description.split('#'));
+                    let codepoints = cols.pop().map(str::trim);
+                    if let (Some(mut status_description), Some(codepoints)) = (status_description, codepoints) {
+                        let _status = status_description.next().map(str::trim);
+                        let description = status_description.next().map(str::trim);
 
-                    let mut codepoint_sequence = Self::get_codepoint_sequence(codepoints);
-                    if codepoint_sequence.ends_with(&[0xfe0f]) {
-                        codepoint_sequence.pop();
-                    }
+                        let mut codepoint_sequence = Self::get_codepoint_sequence(codepoints);
+                        if codepoint_sequence.ends_with(&[0xfe0f]) {
+                            codepoint_sequence.pop();
+                        }
 
-                    if let Some((kind, _)) = self.0.remove(&codepoint_sequence) {
-                        let mut description = description.split(' ');
-                        let emoji = description.next().unwrap();
-                        let _version = description.next().unwrap();
-                        let description: String = description.collect_vec().join(" ");
-                        self.insert_name(&description, codepoint_sequence.clone());
-                        self.insert(codepoint_sequence.clone(), (kind, Some(description)));
-                        // Yes, you will be able to use the emojis as file names.
-                        // Unless your OS prevents you from doing such cursed stuff.
-                        self.insert_name(emoji, codepoint_sequence);
+                        if let Some(description) = description {
+                            if let Some((kind, _)) = self.0.remove(&codepoint_sequence) {
+                                // FIXME: Too bold assumptions
+                                let mut description = description.split(' ');
+                                let emoji = description.next();
+                                let _version = description.next();
+                                let description: String = description.collect_vec().join(" ");
+                                if !description.is_empty() {
+                                    self.insert_name(&description, codepoint_sequence.clone());
+                                    self.insert(codepoint_sequence.clone(), (kind, Some(description)));
+                                    if let Some(emoji) = emoji {
+                                        // Yes, you will be able to use the emojis as file names.
+                                        // Unless your OS prevents you from doing such cursed stuff.
+                                        self.insert_name(emoji, codepoint_sequence);
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -469,7 +476,7 @@ impl EmojiTable {
     /// - `emoji-test.txt`: This file will be used to get the names of all emojis.
     #[cfg(feature = "online")]
     pub fn expand_all_online(&mut self, version: (u32, u32)) -> Result<(), ExpansionError> {
-        let client_builder = reqwest::ClientBuilder::new();
+        let client_builder = reqwest::blocking::ClientBuilder::new();
         let client = client_builder.build()?;
 
         Self::DATA_FILES.iter()
@@ -481,7 +488,7 @@ impl EmojiTable {
     }
 
     #[cfg(feature = "online")]
-    fn expand_data_online(&mut self, client: &reqwest::Client, version: (u32, u32), file: &'static str) -> Result<(), reqwest::Error> {
+    fn expand_data_online(&mut self, client: &reqwest::blocking::Client, version: (u32, u32), file: &'static str) -> Result<(), reqwest::Error> {
         let reader = Self::get_data_file_online(client, version, file)?;
         self.expand(reader).unwrap();
         Ok(())
@@ -489,16 +496,14 @@ impl EmojiTable {
 
     #[cfg(feature = "online")]
     #[inline]
-    fn get_data_file_online(client: &reqwest::Client, version: (u32, u32), file: &'static str) -> Result<Cursor<bytes::Bytes>, reqwest::Error> {
+    fn get_data_file_online(client: &reqwest::blocking::Client, version: (u32, u32), file: &'static str) -> Result<Cursor<bytes::Bytes>, reqwest::Error> {
         let request = client.get(&Self::build_url(version, file)).send();
-        let bytes = futures::executor::block_on(async {
-            request.await?.bytes().await
-        })?;
+        let bytes = request?.bytes()?;
         Ok(Cursor::new(bytes))
     }
 
     #[cfg(feature = "online")]
-    fn expand_descriptions_from_test_online(&mut self, client: &reqwest::Client, version: (u32, u32)) -> Result<(), ExpansionError> {
+    fn expand_descriptions_from_test_online(&mut self, client: &reqwest::blocking::Client, version: (u32, u32)) -> Result<(), ExpansionError> {
         let reader = Self::get_data_file_online(client, version, Self::EMOJI_TEST)?;
         match self.expand_descriptions_from_test_data(reader) {
             Ok(()) => Ok(()),
