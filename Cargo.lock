@@ -1029,9 +1029,9 @@ dependencies = [
 
 [[package]]
 name = "memmap2"
-version = "0.2.1"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04e3e85b970d650e2ae6d70592474087051c11c54da7f7b4949725c5735fbcc6"
+checksum = "723e3ebdcdc5c023db1df315364573789f8857c11b631a2fdfad7c00f5c046b4"
 dependencies = [
  "libc",
 ]
@@ -1377,9 +1377,9 @@ dependencies = [
 
 [[package]]
 name = "pico-args"
-version = "0.4.0"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d70072c20945e1ab871c472a285fc772aefd4f5407723c206242f2c6f94595d6"
+checksum = "db8bcd96cb740d03149cbad5518db9fd87126a10ab519c011893b1754134c468"
 
 [[package]]
 name = "pin-project"
@@ -1842,9 +1842,9 @@ dependencies = [
 
 [[package]]
 name = "roxmltree"
-version = "0.14.0"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf58a7d05b28e14b1e8902fa04c4d5d6109f5450ef71a5e6597f66e53f541504"
+checksum = "921904a62e410e37e215c40381b7117f830d9d89ba60ab5236170541dd25646b"
 dependencies = [
  "xmlparser",
 ]
@@ -2295,9 +2295,9 @@ checksum = "62ddb402ac6c2af6f7a2844243887631c4e94b51585b229fcfddb43958cd55ca"
 
 [[package]]
 name = "ttf-parser"
-version = "0.12.0"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85e00391c1f3d171490a3f8bd79999b0002ae38d3da0d6a3a306c754b053d71b"
+checksum = "1c56097738aec26a3f347edf99f5c84d9d4e3a4b8ce5513ebca85cb621fc7c50"
 
 [[package]]
 name = "typed-arena"
@@ -2419,7 +2419,7 @@ dependencies = [
  "fontdb",
  "kurbo",
  "log",
- "memmap2 0.2.1",
+ "memmap2 0.2.3",
  "pico-args",
  "rctree",
  "roxmltree",
@@ -2427,7 +2427,7 @@ dependencies = [
  "simplecss",
  "siphasher 0.2.3",
  "svgtypes",
- "ttf-parser 0.12.0",
+ "ttf-parser 0.12.2",
  "unicode-bidi",
  "unicode-script",
  "unicode-vo",
