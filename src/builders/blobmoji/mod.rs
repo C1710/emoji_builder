@@ -545,24 +545,36 @@ impl Blobmoji {
                 };
 
                 // It's easier to get the dimensions here than at some later point
-                let size = tree.svg_node().size.to_screen_size();
-                let wave_padding = if emoji.is_flag() && self.waveflag {
-                    (size.height() as f32 * WAVE_FACTOR) as u32
+                let size = tree.svg_node().size;
+
+                let waved_height = if emoji.is_flag() && self.waveflag {
+                    size.height() * (1.0 + WAVE_FACTOR as f64)
                 } else {
-                    0
+                    size.height()
                 };
-                // Adjust the target size if it's going to be taller than 128px
-                let fit_to = if (size.height() + wave_padding) > size.width() {
-                    // We might need to account for waving flags
-                    FitTo::Height((RENDER_AND_CHARACTER_HEIGHT as f32 * (1.0 - WAVE_FACTOR)) as u32)
+
+                let fit_to = if waved_height > size.width() {
+                    if emoji.is_flag() && self.waveflag {
+                        FitTo::Height((RENDER_AND_CHARACTER_HEIGHT as f32 / (1.0 + WAVE_FACTOR)) as u32)
+                    } else {
+                        FitTo::Height(RENDER_AND_CHARACTER_HEIGHT)
+                    }
                 } else {
                     FitTo::Width(RENDER_WIDTH)
                 };
+
+                // Now, how large will it get?
+                // This is now done in the same way as the rendering
+                let rendered_size = fit_to.fit_to(size.to_screen_size()).unwrap();
 
                 let mut data = Vec::with_capacity(4 * RENDER_AND_CHARACTER_HEIGHT as usize * RENDER_WIDTH as usize);
                 // It's okay to do that here as the content gets overwritten anyway
                 unsafe {
                     data.set_len(4 * RENDER_AND_CHARACTER_HEIGHT as usize * RENDER_WIDTH as usize);
+                }
+                if rendered_size.height() < RENDER_AND_CHARACTER_HEIGHT {
+                    // Our buffer is a bit too large
+                    data.fill(0);
                 }
 
                 let pixmap = PixmapMut::from_bytes(&mut data, RENDER_WIDTH, RENDER_AND_CHARACTER_HEIGHT).unwrap();
@@ -571,9 +583,7 @@ impl Blobmoji {
                 let img = resvg::render(&tree, fit_to, pixmap);
 
                 if img.is_some() {
-                    let width = RENDER_WIDTH;
-                    let height = RENDER_AND_CHARACTER_HEIGHT;
-                    Some((data, (width, height)))
+                    Some((data, rendered_size.dimensions()))
                 } else {
                     error!("Failed to render {}", emoji);
                     None
