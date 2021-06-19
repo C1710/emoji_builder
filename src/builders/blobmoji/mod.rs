@@ -25,38 +25,30 @@
 //! [noto]: https://github.com/googlefonts/noto-emoji
 //! [filemojicompat]: https://github.com/c1710/filemojicompat
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::{copy, create_dir_all, File, remove_file, rename};
 use std::io::Write;
-use std::iter::FromIterator;
 use std::path::PathBuf;
 use std::str::FromStr;
-
 use clap::{App, Arg, ArgMatches, SubCommand};
 use itertools::Itertools;
-use oxipng::{optimize_from_memory, PngResult};
-use oxipng::internal_tests::Headers::Safe;
-use png::BitDepth::Eight;
-use png::ColorType::RGBA;
-use png::EncodingError;
-use pyo3::{IntoPy, PyResult, Python};
-use pyo3::prelude::PyModule;
-use pyo3::types::{PyDict, PyString, PyTuple};
+use pyo3::Python;
 use sha2::{Digest, Sha256};
 use sha2::digest::generic_array::GenericArray;
 use usvg::FitTo;
+use tiny_skia::PixmapMut;
 
 use crate::builder::{EmojiBuilder, PreparationResult};
-use crate::builders;
 use crate::changes::{CheckError, FileHashes};
 use crate::emoji::Emoji;
 use crate::emoji_processor::EmojiProcessor;
 use crate::emoji_processors::reduce_colors::ReduceColors;
 use crate::builders::blobmoji::error::BlobmojiError;
-use tiny_skia::PixmapMut;
 
 mod waveflag;
 pub mod error;
+mod image_utils;
+mod noto_emoji_utils;
 
 #[allow(dead_code)]
 pub struct Blobmoji {
@@ -112,39 +104,42 @@ impl EmojiBuilder for Blobmoji {
             }
         };
 
-        // Collect all command line arguments. This is rather boring
+        let ttx_tmpl_path = build_path.join(TMPL_TTX_TMPL);
 
-        let aliases = match &matches {
-            None => None,
-            Some(arg_matches) => match arg_matches.value_of("aliases") {
+        if !&ttx_tmpl_path.exists() {
+            info!("Creating new TTX template");
+            let mut file = File::create(&ttx_tmpl_path)?;
+            file.write_all(TMPL_TTX_TMPL_CONTENT)?;
+        } else {
+            info!("Using existing TTX template");
+        }
+
+        // Create the PNG directory if it doesn't exist
+        let png_dir = build_path.join(PNG_DIR);
+        if !png_dir.exists() {
+            create_dir_all(png_dir)?;
+        };
+
+        let mut fontdb = usvg::fontdb::Database::new();
+        fontdb.load_system_fonts();
+
+
+        // Collect CLI arguments
+        if let Some(matches) = &matches {
+            let aliases = match matches.value_of("aliases") {
                 None => None,
                 Some(aliases) => PathBuf::from_str(aliases).ok()
-            }
-        };
+            };
 
-        let render_only = match &matches {
-            None => false,
-            Some(matches) => matches.is_present("render_only")
-        };
+            let render_only = matches.is_present("render_only");
 
-        let default_font = match &matches {
-            None => String::from("cursive"),
-            Some(matches) => String::from(matches.value_of("default_font").unwrap_or("cursive"))
-        };
+            let default_font = String::from(matches.value_of("default_font").unwrap_or("cursive"));
 
-        let addtional_fonts = match &matches {
-            None => None,
-            Some(matches) => matches.values_of_os("additional_fonts")
-        };
+            let additional_fonts = matches.values_of_os("additional_fonts");
 
-        let waveflag = match &matches {
-            None => false,
-            Some(matches) => matches.is_present("waveflag")
-        };
+            let waveflag = matches.is_present("waveflag");
 
-        let reduce_colors = match &matches {
-            None => None,
-            Some(matches) => {
+            let reduce_colors = {
                 let args = ReduceColors::cli_arguments(&Self::sub_command().p.global_args);
                 let arg_names: Vec<&str> = args.iter()
                     .map(|arg| arg.b.name)
@@ -168,72 +163,60 @@ impl EmojiBuilder for Blobmoji {
                 } else {
                     None
                 }
-            }
-        };
+            };
 
-        let ttx_tmpl_path = build_path.join(TMPL_TTX_TMPL);
-
-        // Copy the predefined TTX_TMPL file to the destination
-        match &matches {
-            Some(matches) => match matches.value_of("ttx_tmpl") {
+            // Copy the predefined TTX_TMPL file to the destination
+            match matches.value_of("ttx_tmpl") {
                 // TODO: Don't unwrap
                 Some(ttx_tmpl) => std::fs::copy(PathBuf::from(ttx_tmpl), &ttx_tmpl_path).unwrap(),
                 None => 0
-            },
-            None => 0
-        };
+            };
 
-        if !ttx_tmpl_path.exists() {
-            info!("Creating new TTX template");
-            let mut file = File::create(ttx_tmpl_path)?;
-            file.write_all(TMPL_TTX_TMPL_CONTENT)?;
-        } else {
-            info!("Using existing TTX template");
-        }
-
-        // Create the PNG directory if it doesn't exist
-        let png_dir = build_path.join(PNG_DIR);
-        if !png_dir.exists() {
-            create_dir_all(png_dir)?;
-        };
-
-        let mut fontdb = usvg::fontdb::Database::new();
-        fontdb.load_system_fonts();
-
-        // Load all the additional fonts
-        if let Some(additional_fonts) = addtional_fonts {
-            let font_errors: Vec<std::io::Error> = additional_fonts
-                .map(PathBuf::from)
-                .map(|font_path| if font_path.is_file() {
-                    fontdb.load_font_file(font_path)
-                } else if font_path.is_dir() {
-                    fontdb.load_fonts_dir(font_path);
-                    Ok(())
+            // Load all the additional fonts
+            if let Some(additional_fonts) = additional_fonts {
+                let font_errors: Vec<std::io::Error> = additional_fonts
+                    .map(PathBuf::from)
+                    .map(|font_path| if font_path.is_file() {
+                        fontdb.load_font_file(font_path)
+                    } else if font_path.is_dir() {
+                        fontdb.load_fonts_dir(font_path);
+                        Ok(())
+                    } else {
+                        Ok(())
+                    })
+                    .filter_map(|result| result.err())
+                    .collect();
+                if !font_errors.is_empty() {
+                    Err(BlobmojiError::IoErrors(font_errors))
                 } else {
                     Ok(())
-                })
-                .filter_map(|result| result.err())
-                .collect();
-            if !font_errors.is_empty() {
-                Err(BlobmojiError::IoErrors(font_errors))
+                }
             } else {
                 Ok(())
-            }
-        } else {
-            Ok(())
-        }?;
+            }?;
 
-        let builder = Box::new(Blobmoji {
-            build_path,
-            hashes,
-            aliases,
-            render_only,
-            default_font,
-            fontdb,
-            waveflag,
-            reduce_colors,
-        });
-        Ok(builder)
+            Ok(Box::new(Blobmoji {
+                build_path,
+                hashes,
+                aliases,
+                render_only,
+                default_font,
+                fontdb,
+                waveflag,
+                reduce_colors,
+            }))
+        } else {
+            Ok(Box::new(Blobmoji {
+                build_path,
+                hashes,
+                aliases: None,
+                render_only: false,
+                default_font: String::from("cursive"),
+                fontdb,
+                waveflag: false,
+                reduce_colors: None,
+            }))
+        }
     }
 
     fn finish(&mut self, emojis: HashMap<&Emoji, Result<Self::PreparedEmoji, Self::Err>>) -> Result<(), Self::Err> {
@@ -270,7 +253,7 @@ impl EmojiBuilder for Blobmoji {
                 // image will get taller.
 
                 // Add the padding
-                let mut image = Blobmoji::enlarge_to(
+                let mut image = image_utils::enlarge_to(
                     &rendered,
                     width,
                     height,
@@ -283,11 +266,11 @@ impl EmojiBuilder for Blobmoji {
                 // (which is only the case for the GPL-version which is currently not public)
                 let encoded = match self.quantize_to_png(&emoji, &mut image) {
                     Some(quantized) => quantized,
-                    None => Blobmoji::pixels_to_png(&image).unwrap()
+                    None => image_utils::pixels_to_png(&image).unwrap()
                 };
 
                 // Lossless compression
-                let optimized = match self.optimize_png(&encoded) {
+                let optimized = match image_utils::optimize_png(&encoded) {
                     Ok(optimized) => optimized,
                     Err(e) => {
                         warn!("Error in optimizing {:?}: {:?}", emoji, e);
@@ -296,7 +279,7 @@ impl EmojiBuilder for Blobmoji {
                 };
 
                 // Save it
-                self.write_png(emoji, optimized).unwrap();
+                image_utils::write_png(&self.build_path, emoji, optimized).unwrap();
 
                 // Save the hash value of the source (to prevent unnecessary re-renders)
                 let hash = FileHashes::hash(emoji);
@@ -358,7 +341,8 @@ impl EmojiBuilder for Blobmoji {
 
             // TODO: Handle errors
             info!("Adding glyphs");
-            match self.add_glyphs(
+            match noto_emoji_utils::add_glyphs(
+                &self.aliases,
                 &emojis,
                 self.build_path.join(TMPL_TTX_TMPL),
                 self.build_path.join(TMPL_TTX)
@@ -378,7 +362,7 @@ impl EmojiBuilder for Blobmoji {
             }
 
             info!("Building TTF");
-            match self.build_ttf() {
+            match noto_emoji_utils::build_ttf(&self.build_path) {
                 Ok(_) => (),
                 Err(err) => {
                     let gil = Python::acquire_gil();
@@ -389,7 +373,7 @@ impl EmojiBuilder for Blobmoji {
             };
 
             info!("Doing... something");
-            match self.emoji_builder() {
+            match noto_emoji_utils::emoji_builder(&self.build_path) {
                 Ok(_) => (),
                 Err(err) => {
                     let gil = Python::acquire_gil();
@@ -400,7 +384,7 @@ impl EmojiBuilder for Blobmoji {
             };
 
             info!("Mapping PUA");
-            match self.map_pua() {
+            match noto_emoji_utils::map_pua(&self.build_path) {
                 Ok(_) => (),
                 Err(err) => {
                     let gil = Python::acquire_gil();
@@ -411,7 +395,7 @@ impl EmojiBuilder for Blobmoji {
             };
 
             info!("Adding Version Selector");
-            match self.add_vs_cmap() {
+            match noto_emoji_utils::add_vs_cmap(&self.build_path) {
                 Ok(_) => (),
                 Err(err) => {
                     let gil = Python::acquire_gil();
@@ -543,7 +527,8 @@ impl Blobmoji {
                 ..Default::default()
             };
 
-            let tree = usvg::Tree::from_file(svg_path, &opt);
+            let data = std::fs::read(svg_path).ok()?;
+            let tree = usvg::Tree::from_data(&data, &opt);
 
             if let Ok(tree) = tree {
                 // Reduce the colors to a certain palette if possible
@@ -558,6 +543,7 @@ impl Blobmoji {
                 } else {
                     tree
                 };
+
                 // It's easier to get the dimensions here than at some later point
                 let size = tree.svg_node().size.to_screen_size();
                 let wave_padding = if emoji.is_flag() && self.waveflag {
@@ -603,33 +589,11 @@ impl Blobmoji {
         }
     }
 
-    fn pixels_to_png(img: &[u8]) -> Result<Vec<u8>, EncodingError> {
-        // According to this post, PNG files have a header of 8 bytes: https://stackoverflow.com/questions/10423942/what-is-the-header-size-of-png-jpg-jpeg-bmp-gif-and-other-common-graphics-for
-        let mut png_target = Vec::with_capacity(img.len() + 8);
-        let mut encoder = png::Encoder::new(&mut png_target, CHARACTER_WIDTH, RENDER_AND_CHARACTER_HEIGHT);
-        encoder.set_color(RGBA);
-        encoder.set_depth(Eight);
-        let mut writer = encoder.write_header()?;
-        writer.write_image_data(img)?;
-        // writer still borrows png_target. Fortunately we don't need it anymore
-        std::mem::drop(writer);
-        Ok(png_target)
-    }
 
-    /// Saves the already encoded PNG file
-    fn write_png(&self, emoji: &Emoji, image: Vec<u8>) -> std::io::Result<()> {
-        let filename = Blobmoji::generate_filename(&emoji);
-        let path = self.build_path
-            .join(PNG_DIR)
-            .join(&PathBuf::from(filename));
-        let mut file = File::create(path)?;
-        file.write_all(&image)
-    }
 
     /// Performs the quantization process which apparently does some sort of posterization to reduce
     /// the number of colors in the image.
-    /// Due to issues with the license which doesn't allow this project to be licensed under a
-    /// permissive license, this function (unfortunately) does nothing at all and is only
+    /// Due to licensing issues, this function (unfortunately) does nothing at all and is only
     /// implemented in a fork (which is - at the moment of writing - not released).
     ///
     /// Errors are not returned as this would need knowledge of the error type which relies on the
@@ -641,110 +605,8 @@ impl Blobmoji {
         None
     }
 
-    /// Runs `oxipng` on the image. It has to be encoded as PNG first
-    fn optimize_png(&self, img: &[u8]) -> PngResult<Vec<u8>> {
-        let opt = oxipng::Options {
-            fix_errors: true,
-            strip: Safe,
-            color_type_reduction: true,
-            palette_reduction: true,
-            bit_depth_reduction: true,
-            ..Default::default()
-        };
-
-        optimize_from_memory(img, &opt)
-    }
 
     const EMPTY_PIXEL: [u8; 4] = [0; 4];
-
-    /// Adds a transparent area around an image and puts it in the center
-    /// If a delta value is odd, the image will be positioned 1 pixel left of the center.
-    fn enlarge_by(
-        content: &[u8],
-        src_width: u32,
-        src_height: u32,
-        d_width: u32,
-        d_height: u32,
-    ) -> Vec<u8> {
-        // The padding will be added as follows:
-        //
-        // |  pad_vert   |  pad_vert = padding vertical = d_height/2
-        // |-------------|
-        // |  |      |   |
-        // |ph| cont |ph |  ph = padding horizontal = d_width/2
-        // |  |      |   |
-        // |-------------|
-        // |  pad_vert   |
-        // |             |
-
-
-        // If the delta value is odd, we need to have the left/top padding one pixel smaller.
-        // The approach here is to add the shorter padding and add a one pixel padding later.
-        // If d % 2 = 1, round it down by 1,
-        // If d % 2 = 0, don't round
-        // That's the same as subtracting d % 2
-        let d_width_rounded = d_width - (d_width % 2);
-        let d_height_rounded = d_height - (d_height % 2);
-
-        // This is what we eventually want to have
-        let target_width = src_width + d_width;
-        let target_height = src_height + d_height;
-
-        // The smaller padding side's lengths. As we assume that every pixel consists of 4 subpixels
-        // (RGBA), we'll need to multiply by 4 here.
-        let pad_horizontal = d_width_rounded * 4;
-        let pad_vertical = d_height_rounded * target_width * 4;
-
-        // Prepare the actual padding data
-        let pad_horizontal = vec![0; pad_horizontal as usize / 2];
-        let pad_vertical = vec![0; pad_vertical as usize / 2];
-
-        // This is the target image
-        let mut image = Vec::with_capacity((target_width * target_height * 4) as usize);
-
-        // Add the top padding (the shorter one)
-        image.extend_from_slice(&pad_vertical);
-        for line in 0..src_height as usize {
-            // Add the left padding
-            image.extend_from_slice(&pad_horizontal);
-            // Add the image's line
-            let start = line * src_width as usize * 4;
-            let end = (line + 1) * src_width as usize * 4;
-            image.extend_from_slice(&content[start..end]);
-            // Add the right padding
-            image.extend_from_slice(&pad_horizontal);
-            // If necessary, add an extra pixel at the right side
-            if d_width % 2 != 0 {
-                image.extend_from_slice(&Blobmoji::EMPTY_PIXEL);
-            }
-        }
-        // Add the bottom padding
-        image.extend_from_slice(&pad_vertical);
-
-        // If necessary, add an extra line at the bottom.
-        if d_height % 2 != 0 {
-            image.extend_from_slice(&vec![0; target_width as usize * 4]);
-        }
-
-        image
-    }
-
-    fn enlarge_to(
-        content: &[u8],
-        src_width: u32,
-        src_height: u32,
-        target_width: u32,
-        target_height: u32,
-    ) -> Vec<u8> {
-        assert!(target_width >= src_width);
-        assert!(target_height >= src_height);
-
-        // Although the two asserts already make sure that we don't get that case, saturating_sub
-        // is used to prevent overflows.
-        let d_width = target_width.saturating_sub(src_width);
-        let d_height = target_height.saturating_sub(src_height);
-        Self::enlarge_by(content, src_width, src_height, d_width, d_height)
-    }
 
     fn generate_filename(emoji: &Emoji) -> String {
         let mut codepoints = emoji.sequence.iter()
@@ -762,244 +624,7 @@ impl Blobmoji {
     }
 
 
-    const ADD_GLYPHS_PY: &'static str = include_str!("add_glyphs/add_glyphs.py");
-    const ADD_ALIASES_PY: &'static str = include_str!("add_glyphs/add_aliases.py");
-    const ADD_EMOJI_GSUB_PY: &'static str = include_str!("add_glyphs/add_emoji_gsub.py");
 
-    fn add_glyphs(&self,
-                  emojis: &HashMap<&Emoji, Result<
-                      <builders::blobmoji::Blobmoji as EmojiBuilder>::PreparedEmoji,
-                      <builders::blobmoji::Blobmoji as EmojiBuilder>::Err>
-                  >,
-                  ttx_tmpl: PathBuf,
-                  ttx: PathBuf) -> PyResult<()> {
-        // seq_to_file: dir<codepoint sequence, file>
-        //  cps = emoji.sequence (with strings instead of u32)
-        //  seq = cps.filter(|cp| cp != fe0f)
-        //  check cps (codepoints) if between 0 and 0x10ffff
-        //  seq_to_file.add( sequence: path to corresponding image)
-        // Unfortunately parallel processing is not possible due to Python
-        let seq_to_file = emojis.iter()
-            .filter(|(_, prepared)| prepared.is_ok())
-            .map(|(emoji, prepared)| (
-                // First get the sequences as a list of strings instead of u32s
-                emoji.sequence.iter()
-                    // In order to replicate the original behavior, we'll need to filter out fe0f
-                    // variant selectors
-                    // TODO: Revisit this behavior
-                    .filter(|codepoint| **codepoint != 0xfe0fu32).collect_vec(),
-                // Then get the file output path
-                prepared.as_ref().unwrap().0.to_string_lossy().into_owned()
-            ));
-
-        // From https://pyo3.rs/master/python_from_rust.html
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
-
-        // Prepare the modules that add_glyphs will need
-        PyModule::from_code(
-            py,
-            Blobmoji::ADD_EMOJI_GSUB_PY,
-            "add_emoji_gsub.py",
-            "add_emoji_gsub"
-        )?;
-        let add_aliases = PyModule::from_code(
-            py,
-            Blobmoji::ADD_ALIASES_PY,
-            "add_aliases.py",
-            "add_aliases"
-        )?;
-        PyModule::from_code(
-            py,
-            Blobmoji::PNG_PY,
-            "third_party/color_emoji/png.py",
-            "png"
-        )?;
-
-        let add_glyphs_module = PyModule::from_code(
-            py,
-            Blobmoji::ADD_GLYPHS_PY,
-            "add_glyphs.py",
-            "add_glyphs")?;
-
-
-        // In order to use this mapping, we'll need to replace the update_ttx-function
-        // This code is mostly copied from https://github.com/googlefonts/noto-emoji/blob/f8131fc45736000552cd04a8388dc414d666a829/add_glyphs.py#L353
-        let aliases = match &self.aliases {
-            Some(aliases) => Some(add_aliases.call1(
-                "read_emoji_aliases", (aliases.to_string_lossy().into_owned(),))?),
-            None => None
-        };
-
-        let seq_to_file: Vec<(&PyTuple, &PyString)> = seq_to_file
-            .map(|(sequence, filepath)|
-            (PyTuple::new(py, sequence), PyString::new(py, &filepath)))
-            .collect();
-
-        let seq_to_file_dict = PyDict::from_sequence(py, seq_to_file.into_py(py))?;
-
-        let aliases = match aliases {
-            Some(aliases) => Some(add_glyphs_module.call1(
-                "apply_aliases", (seq_to_file_dict, aliases)
-            ).unwrap()),
-            None => None
-        };
-
-        let ttx_module = PyModule::import(py, "fontTools.ttx")?;
-
-
-        let font = ttx_module.call0("TTFont")?;
-        // FIXME: Input file missing
-        font.call_method1("importXML", (ttx_tmpl.to_string_lossy().into_owned(), ))?;
-
-        let hhea = font.get_item("hhea")?;
-        let ascent = hhea.getattr("ascent")?;
-        let descent = hhea.getattr("descent")?;
-
-        let ascent:  i32 = ascent.extract()?;
-        let descent: i32 = descent.extract()?;
-        let lineheight = ascent - descent;
-
-        let map_fn = add_glyphs_module.call1(
-            "get_png_file_to_advance_mapper",
-            (lineheight,)
-        )?;
-        let seq_to_advance = add_glyphs_module.call1(
-            "remap_values",
-            (seq_to_file_dict, map_fn)
-        )?;
-
-        let vadvance = if font.call_method1("__contains__", ("vhea",))?.extract()? {
-            font.get_item("vhea")?.getattr("advanceHeightMax")?.extract()?
-        } else {
-            lineheight
-        };
-
-        add_glyphs_module.call1("update_font_data", (font, seq_to_advance, vadvance, aliases))?;
-
-        font.call_method1("saveXML", (ttx.to_string_lossy().into_owned(),))?;
-
-        Ok(())
-    }
-
-    fn build_ttf(&self) -> PyResult<()>{
-        // TODO: Do this in a venv or similar
-        // TODO: Don't require fonttools
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        let ttx_module = PyModule::import(py, "fontTools.ttx")?;
-
-        ttx_module.call1("main", (vec![self.build_path.join(TMPL_TTX).to_string_lossy().into_owned()],))?;
-
-        Ok(())
-    }
-
-    const EMOJI_BUILDER_PY: &'static str = include_str!("color_emoji/emoji_builder.py");
-    const PNG_PY: &'static str = include_str!("color_emoji/png.py");
-
-    fn emoji_builder(&self) -> PyResult<()> {
-        // TODO: We need access to that file. Embedding with include_str! is probably easier
-        /*let emoji_builder_path: PathBuf =
-            ["noto-emoji", "third_party", "color_emoji", "emoji_builder.py"]
-                .iter().collect();*/
-
-        let tmpl_ttf = self.build_path
-            .join(TMPL_TTF)
-            .to_string_lossy()
-            .into_owned();
-        let ttf = self.build_path
-            .join(TTF)
-            .to_string_lossy()
-            .into_owned();
-        let png_dir = self.build_path
-            .join(PNG_DIR)
-            .join("emoji_u")
-            .to_string_lossy()
-            .into_owned();
-
-        let argv = vec![
-            "emoji_builder.py",
-            "-S",
-            "-V",
-            &tmpl_ttf,
-            &ttf,
-            &png_dir
-        ];
-
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
-        PyModule::from_code(
-            py,
-            Blobmoji::PNG_PY,
-            "png.py",
-            "png"
-        )?;
-
-        let emoji_builder_module = PyModule::from_code(
-            py,
-            Blobmoji::EMOJI_BUILDER_PY,
-            "emoji_builder.py",
-            "emoji_builder"
-        )?;
-
-        emoji_builder_module.call1("main", (argv,))?;
-
-        Ok(())
-    }
-
-    const MAP_PUA_EMOJI_PY: &'static str = include_str!("map_pua_emoji/map_pua_emoji.py");
-    // We can reuse ADD_EMOJI_GSUB_PY from add_glyphs
-
-    fn map_pua(&self) -> PyResult<()> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
-        // Prepare required module(s)
-        PyModule::from_code(
-            py,
-            Blobmoji::ADD_EMOJI_GSUB_PY,
-            "add_emoji_gsub.py",
-            "add_emoji_gsub"
-        )?;
-
-        let map_pua_module = PyModule::from_code(
-            py,
-            Blobmoji::MAP_PUA_EMOJI_PY,
-            "map_pua_emoji.py",
-            "map_pua_emoji"
-        )?;
-
-        map_pua_module.call1("add_pua_cmap", (
-            self.build_path.join(TTF).to_string_lossy().into_owned(),
-            self.build_path.join(TTF_WITH_PUA).to_string_lossy().into_owned()
-            ))?;
-
-        Ok(())
-    }
-
-    fn add_vs_cmap(&self) -> PyResult<()> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        let vs_mapper = PyModule::import(py, "nototools.add_vs_cmap")?;
-        //    [python3] add_vs_cmap.py -vs 2640 2642 2695 --dstdir '.' -o "<name>.ttf-with-pua-varse1" "<name>.ttf-with-pua"
-        let kwargs = PyDict::new(py);
-        let vs_added = HashSet::from_iter(vec![0x2640, 0x2642, 0x2695]);
-
-        kwargs.set_item("presentation", "'emoji'")?;
-        kwargs.set_item("output", format!("{}-{}", TTF_WITH_PUA, "varse1"))?;
-        kwargs.set_item("dst_dir", self.build_path.to_string_lossy().into_owned())?;
-        kwargs.set_item("vs_added", vs_added)?;
-
-        vs_mapper.call_method(
-            "modify_fonts",
-            (vec![self.build_path.join(TTF_WITH_PUA).to_string_lossy().into_owned()],),
-            Some(kwargs)
-        )?;
-
-        Ok(())
-    }
 
     fn store_prepared(&mut self, emojis: &HashMap<&Emoji, Result<<Blobmoji as EmojiBuilder>::PreparedEmoji, <Blobmoji as EmojiBuilder>::Err>>) -> Result<(), BlobmojiError> {
         // Collect all errors that occurred while checking the hashes and save those that were successful
