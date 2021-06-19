@@ -65,7 +65,7 @@ pub fn run<T: EmojiBuilder>(emojis: &[Emoji]) -> (PathBuf, PathBuf, Result<(), T
 }
 
 
-fn parse_emojis(emojis: &Path, flags: &Path, table: &Option<EmojiTable>) -> Vec<Emoji> {
+fn parse_emojis(emojis: &Path, flags: &Path, table: Option<&EmojiTable>) -> Vec<Emoji> {
     let emojis = emojis.read_dir().unwrap();
     let emojis = emojis
         .filter_map(|entry| entry.ok())
@@ -99,7 +99,7 @@ pub fn run_with_test_files<T: EmojiBuilder>() -> TestResult<T> {
     let emojis = parse_emojis(
         &PathBuf::from(TEST_EMOJIS),
         &PathBuf::from(TEST_FLAGS),
-        &table,
+        table.as_ref(),
     );
     let (build_path, output_path, result) = run::<T>(&emojis);
     let table = table.unwrap();

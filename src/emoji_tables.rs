@@ -30,8 +30,14 @@ use regex::Regex;
 
 use crate::emoji::EmojiKind;
 
+/// A code sequence
 type EmojiTableKey = Vec<u32>;
+// The EmojiKinds and optionally a description/name
 type EmojiTableEntry = (Vec<EmojiKind>, Option<String>);
+
+const EMOJI_SEQUENCE_SPACE_REGEX: &str = r"(([A-F0-9a-f]{1,8})(\s+([A-F0-9a-f]{1,8}))*)";
+const EMOJI_STATUS_REGEX: &str = r"(component|fully-qualified|minimally-qualified|unqualified)";
+const EMOJI_NAME_REGEX: &str = r"(.*)?\s*E(\d+.\d+) (.+)";
 
 /// An internal representation of one or more Unicode® emoji data tables
 /// https://unicode.org/Public/emoji/12.0/
@@ -53,6 +59,8 @@ impl EmojiTable {
     ///
     /// If an emoji sequence (in this case an entry with more than one codepoints) contains the VS-16
     /// (Variant Selector-16 - Emoji Representation, U+FE0F), the sequence will also be included without the VS-16.
+    ///
+    /// **Important** Currently, names are only extracted from emoji-test.txt-like files
     /// # Examples:
     /// ```
     /// use std::path::PathBuf;
@@ -70,7 +78,7 @@ impl EmojiTable {
     /// let rainbow = vec![0x1f3f3, 0xfe0f, 0x200d, 0x1f308];
     /// let rainbow_no_fe0f = vec![0x1f3f3, 0x200d, 0x1f308];
     ///
-    /// let rainbow_entry = (vec![EmojiZwjSequence], Some(String::from("rainbow flag")));
+    /// let rainbow_entry = (vec![EmojiZwjSequence], None);
     ///
     /// assert!(table.as_ref().contains_key(&rainbow));
     /// assert!(table.as_ref().contains_key(&rainbow_no_fe0f));
@@ -88,68 +96,38 @@ impl EmojiTable {
 
     pub fn expand<I: BufRead>(&mut self, reader: I) -> Result<(), Error> {
         lazy_static! {
-            static ref HEX_SEQUENCE: Regex = Regex::new(r"[a-fA-F0-9]+").unwrap();
-            static ref RANGE: Regex = Regex::new(r"([a-fA-F0-9]+)\.\.([a-fA-F0-9]+)").unwrap();
+            static ref HEX_SEQUENCE: Regex = Regex::new(r"[a-fA-F0-9]{1,8}").unwrap();
+            static ref RANGE: Regex = Regex::new(&format!(r"(?P<range>(?P<range_start>{hex})\.\.(?P<range_end>{hex}))", hex = &*HEX_SEQUENCE)).unwrap();
+            static ref SEQUENCE: Regex = Regex::new(&format!(r"(?P<sequence>({hex})(\s+({hex}))*)", hex = &*HEX_SEQUENCE)).unwrap();
+            static ref EMOJI_REGEX: Regex = Regex::new(&format!(r"(?P<codepoints>{}|{})", &*RANGE, &*SEQUENCE)).unwrap();
+            // TODO: Maybe make this more specific
+            static ref EMOJI_KIND_REGEX: Regex = Regex::new(r"(?P<kind>[A-Za-z_\-]+)").unwrap();
+            static ref DATA_REGEX: Regex = Regex::new(&format!(r"^{}\s*;\s*{}\s*(;(?P<name>.*)\s*)?(#.*)?$", &*EMOJI_REGEX, &*EMOJI_KIND_REGEX)).unwrap();
         }
 
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                // Ignore comments
-                if !line.trim().starts_with('#') {
-                    let mut cols: Vec<&str> = line.split(';').collect();
+        for line in reader.lines()
+            .filter_map(|line| line.ok()) {
+            let line = line.trim();
+            if !line.starts_with('#') && !line.is_empty() {
+                let captures = (&*DATA_REGEX as &Regex).captures(line);
+                if let Some(captures) = captures {
+                    let kind = EmojiKind::from_str(captures.name("kind").unwrap().as_str())
+                        .unwrap_or_else(|err| err.get());
 
-                    let (kind, description) = match cols.len() {
-                        2 => {
-                            // codepoint; kind # description
-                            // Length is already checked
-                            let kind_descr = cols.pop().unwrap();
-                            let mut kind_descr = kind_descr.split('#');
-                            let kind = Some(kind_descr.next().unwrap().trim());
-                            let description = match kind_descr.next() {
-                                Some(description) => Some(description.trim()),
-                                None => None,
-                            };
-                            (kind, description)
-                        }
-                        1 => (None, None),
-                        0 => (None, None),
-                        _ => (Some(cols[1].trim()), Some(cols[2].trim())),
-                    };
+                    // No, descriptions will not be used for now; these can be more easily obtained
+                    // from emoji-test.txt
 
-                    if let Some(kind) = kind {
-                        let emoji = cols[0].trim();
-                        let kind = match EmojiKind::from_str(kind) {
-                            Ok(kind) => kind,
-                            Err(unknown_kind) => unknown_kind.into(),
-                        };
-
-                        if let Some(range) = RANGE.captures(emoji) {
-                            // from..to
-                            let (start, end) = (&range[1], &range[2]);
-                            let extension = self.parse_range(start, end, kind).0;
-                            self.0.extend(extension);
-                        } else {
-                            // A single sequence (or a single codepoint)
-                            let ((seq, entry), name_mapping) = self.parse_sequence(emoji, kind.clone(), description);
-                            self.insert(seq, entry);
-                            // If we have a name, we can insert it as well
-                            if let Some((name, seq)) = name_mapping {
-                                self.insert_name(&name, seq);
-                            }
-                            let emoji = emoji.to_lowercase();
-                            if emoji.contains("fe0f") {
-                                // Names will be mapped to the original code sequences including the
-                                // FE0F-character.
-                                // TODO: Check this behaviour
-                                let ((seq, entry), _) = self.parse_sequence(
-                                    &emoji.to_lowercase().replace("fe0f", ""),
-                                    kind,
-                                    description,
-                                );
-                                self.insert(seq, entry);
-                            }
-                        }
+                    if captures.name("range").is_some() {
+                        let start = captures.name("range_start").unwrap().as_str();
+                        let end = captures.name("range_end").unwrap().as_str();
+                        self.update_range(start, end, Some(kind));
+                    } else if let Some(sequence) = captures.name("sequence") {
+                        self.update_emoji(Self::get_codepoint_sequence(sequence.as_str()), Some(kind), None);
+                    } else {
+                        unreachable!("Either a range or a sequence has to be captured");
                     }
+                } else {
+                    eprintln!("Malformed line in emoji-table: {}", line);
                 }
             }
         }
@@ -163,8 +141,7 @@ impl EmojiTable {
     /// ## Emoji kind
     /// The `EmojiKind` vector will be updated to include the new kind found in this entry.
     /// ## Description
-    /// If the new entry _has_ a description, the old description will be updated.
-    /// Otherwise it will stay the same as before (which might also be `None`).
+    /// Currently, descriptions will not be used
     /// # Examples
     /// ```
     /// use emoji_builder::emoji_tables::EmojiTable;
@@ -179,7 +156,7 @@ impl EmojiTable {
     /// let rainbow = vec![0x1f3f3, 0xfe0f, 0x200d, 0x1f308];
     /// let rainbow_no_fe0f = vec![0x1f3f3, 0x200d, 0x1f308];
     ///
-    /// let rainbow_entry = (vec![EmojiKind::EmojiZwjSequence], Some(String::from("rainbow flag")));
+    /// let rainbow_entry = (vec![EmojiKind::EmojiZwjSequence], None);
     ///
     /// assert!(table.as_ref().contains_key(&rainbow));
     /// assert!(table.as_ref().contains_key(&rainbow_no_fe0f));
@@ -192,7 +169,7 @@ impl EmojiTable {
         self.expand(reader)
     }
 
-    fn get_description(&self, sequence: &[u32]) -> Option<String> {
+    fn _get_description(&self, sequence: &[u32]) -> Option<String> {
         match self.0.get(sequence) {
             Some((_, description)) => description.clone(),
             None => None,
@@ -206,74 +183,69 @@ impl EmojiTable {
     /// Descriptions will _not_ be parsed as they would only be available for the start and end codepoint anyway.
     ///
     /// The table will be used to find existing kinds/descriptions
-    fn parse_range(&self, start: &str, end: &str, kind: EmojiKind) -> EmojiTable {
+    fn update_range(&mut self, start: &str, end: &str, kind: Option<EmojiKind>) {
         // Start and end are already built from a regular expression that only matches hexadecimal strings
         let start = u32::from_str_radix(start, 16).unwrap();
         let end = u32::from_str_radix(end, 16).unwrap();
-        let mut out_table = HashMap::new();
-        let mut names_map = HashMap::new();
         for codepoint in start..=end {
-            let codepoint = vec![codepoint];
-            // Reallocation would be necessary anyway (because of the extension of the vector).
-            let existing_kinds = self.get(&codepoint);
-            let mut kinds = match existing_kinds {
-                Some((kinds, _)) => {
-                    let mut new_kinds = Vec::with_capacity(existing_kinds.unwrap().0.len() + 1);
-                    new_kinds.extend_from_slice(&kinds);
-                    new_kinds
-                }
-                None => Vec::with_capacity(1),
-            };
-            kinds.push(kind.clone());
-
-            let existing_description = self.get_description(&codepoint);
-
-            if let Some(description) = &existing_description {
-                names_map.insert(description.to_lowercase(), codepoint.clone());
-            }
-
-            out_table.insert(codepoint, (kinds, existing_description));
+            self.update_emoji(vec![codepoint], kind.clone(), None);
         }
-        EmojiTable(out_table, names_map)
     }
 
-    /// Parses a regular emoji codepoint sequence and adds it including a description (if given)
+    /// Updates or adds an entry in the table
     /// # Arguments
-    /// `emoji`: The input string (e.g. `"1f3f fe0f 200d 26a7 fe0f"`) to be parsed
+    /// `emoji`: The codepoint sequence for the emoji
     /// `kind`: The emoji kind to assign for this step
-    /// `description`: The name of the emoji (or `None`)
-    fn parse_sequence(&self,
-                      emoji: &str,
-                      kind: EmojiKind,
-                      description: Option<&str>,
-    ) -> ((EmojiTableKey, EmojiTableEntry), Option<(String, EmojiTableKey)>) {
-        let code_sequences = Self::get_codepoint_sequence(emoji);
-
-        // Reallocation would be necessary anyway (because of the extension of the vector)
-        let existing_kinds = self.get(&code_sequences);
-        let mut kinds = match existing_kinds {
-            Some((kinds, _)) => {
-                let mut new_kinds = Vec::with_capacity(existing_kinds.unwrap().0.len() + 1);
-                new_kinds.extend_from_slice(&kinds);
-                new_kinds
-            }
-            None => Vec::with_capacity(1),
-        };
-
-        kinds.push(kind);
-
-        let existing_description = self.get_description(&code_sequences);
-
-        // FIXME: There seem to be various styles for comments.
-        //        For example, the official tables have descriptions come last.
-        if let Some(description) = description {
-            let description = description.split('#').next().unwrap_or_default().trim();
-            let description = String::from(description);
-            let lower_description = description.to_lowercase();
-            ((code_sequences.clone(), (kinds, Some(description))),
-             Some((lower_description, code_sequences)))
+    /// `description`: The name of the emoji
+    fn update_emoji(&mut self,
+                    emoji: EmojiTableKey,
+                    kind: Option<EmojiKind>,
+                    description: Option<&str>
+    ) {
+        // If it contains FE0F, we'll also add it without it
+        // TODO: Maybe drop this behavior?
+        if emoji.contains(&0xfe0f) {
+            self.update_emoji(
+                emoji.iter().filter_map(|codepoint| if *codepoint != 0xfe0f {
+                    Some(*codepoint)
+                } else {
+                    None
+                }).collect(),
+                kind.clone(),
+                description
+            )
+        }
+        let existing_entry = self.0.get_mut(&emoji);
+        if let Some((kinds, existing_description)) = existing_entry {
+            Self::add_kind(kinds, kind);
+            Self::update_description(existing_description, description);
         } else {
-            ((code_sequences, (kinds, existing_description)), None)
+            let entry = (
+                // We expect that at some point the emoji will have at least one kind
+                kind.map(|kind| vec![kind]).unwrap_or_else(|| Vec::with_capacity(1)),
+                description.map(|descr| descr.to_owned())
+            );
+            self.0.insert(emoji, entry);
+        }
+    }
+
+    fn update_description(old_description: &mut Option<String>, new_description: Option<&str>) {
+        if let Some(old_description) = old_description {
+            if let Some(new_description) = new_description {
+                if !new_description.trim().is_empty() {
+                    *old_description = new_description.to_owned();
+                }
+            }
+        } else {
+            *old_description = new_description.map(|description| description.to_owned());
+        }
+    }
+
+    fn add_kind(existing_kinds: &mut Vec<EmojiKind>, kind: Option<EmojiKind>) {
+        if let Some(kind) = kind {
+            if !existing_kinds.contains(&kind) {
+                existing_kinds.insert(existing_kinds.binary_search(&kind).unwrap_err(), kind);
+            }
         }
     }
 
@@ -320,12 +292,12 @@ impl EmojiTable {
     /// let mut table = EmojiTable::new();
     /// // Even if this description string is the same as the name, it does not have to be.
     /// table.insert(codepoint.clone(), (vec![], Some(name.to_string())));
-    /// table.insert_name(name, codepoint.clone());
+    /// table.insert_lookup_name(name, codepoint.clone());
     ///
     /// // Assert that we can find an entry with the given name (and that it's the correct one)
     /// assert_eq!(*table.get_by_name(name).unwrap().0, codepoint);
     /// ```
-    pub fn insert_name(&mut self, name: &str, key: EmojiTableKey) -> Option<EmojiTableKey> {
+    pub fn insert_lookup_name(&mut self, name: &str, key: EmojiTableKey) -> Option<EmojiTableKey> {
         let lookup_name = Self::normalize_lookup_name(name);
         self.1.insert(lookup_name, key)
     }
@@ -344,25 +316,34 @@ impl EmojiTable {
     /// let key = vec![0x1f914];
     /// let entry = (vec![], Some(String::from("Thinking")));
     /// table.insert(key.clone(), entry.clone());
-    /// table.insert_name("ThInKiNg_FaCe", key.clone());
-    /// assert_eq!(Some((&key, &entry)), table.get_by_name("tHiNkIng-fAcE"));
+    /// table.insert_lookup_name("ThInKiNg_FaCe", key.clone());
+    /// assert_eq!(Some((key.clone(), &entry)), table.get_by_name("tHiNkIng-fAcE"));
     ///
-    /// // If you have trouble seeing this: We're adding the emoji itself as a name
-    /// table.insert_name("🤔", key.clone());
-    /// assert_eq!(Some((&key, &entry)), table.get_by_name("🤔"));
+    /// // Emojis themselves are already valid lookup names
+    /// assert_eq!(Some((key.clone(), &entry)), table.get_by_name("🤔"));
+    /// table.insert_lookup_name("thinkin'", key.clone());
     /// // We don't overwrite the old mapping, so this still works
-    /// assert_eq!(Some((&key, &entry)), table.get_by_name("tHiNkIng-fAcE"));
+    /// assert_eq!(Some((key.clone(), &entry)), table.get_by_name("tHiNkIng-fAcE"));
+    /// assert_eq!(Some((key.clone(), &entry)), table.get_by_name("thinkin"));
     /// ```
-    pub fn get_by_name(&self, name: &str) -> Option<(&EmojiTableKey, &EmojiTableEntry)> {
-        let lookup_name = Self::normalize_lookup_name(name);
-        if let Some(codepoint) = self.1.get(&lookup_name) {
-            if let Some(entry) = self.0.get(codepoint) {
-                Some((codepoint, entry))
+    pub fn get_by_name(&self, name: &str) -> Option<(EmojiTableKey, &EmojiTableEntry)> {
+        // First we'll try to look up the string itself, because it might be an emoji
+        let chars = name.chars()
+            .map(|character| character as u32)
+            .collect_vec();
+        if let Some(entry) = self.0.get(&chars) {
+            Some((chars, entry))
+        } else {
+            let lookup_name = Self::normalize_lookup_name(name);
+            if let Some(codepoint) = self.1.get(&lookup_name) {
+                if let Some(entry) = self.0.get(codepoint) {
+                    Some((codepoint.clone(), entry))
+                } else {
+                    None
+                }
             } else {
                 None
             }
-        } else {
-            None
         }
     }
 
@@ -380,7 +361,7 @@ impl EmojiTable {
             static ref DELIMITERS: Regex = Regex::new(r"[-_. ]").unwrap();
             static ref REMOVED: Regex = Regex::new(r#"[,*\\/:'"()]"#).unwrap();
         }
-        DELIMITERS.split(&REMOVED.replace_all(name, "")).join(" ").to_lowercase()
+        (&*DELIMITERS as &Regex).split(&REMOVED.replace_all(name, "")).join(" ").to_lowercase()
     }
 
     pub fn len(&self) -> usize {
@@ -390,6 +371,7 @@ impl EmojiTable {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+
 
     /// Uses the names of the emoji-test.txt files.
     /// These seem to be more suitable than emoji-data.txt as they don't include any emoji character
@@ -402,40 +384,35 @@ impl EmojiTable {
     /// The syntax of these files is:
     /// `Codepoint ; ("component"|"fully-qualified"|"minimally-qualified"|"unqualified") # Emoji "E"Version Emoji name`
     pub fn expand_descriptions_from_test_data<I: BufRead>(&mut self, reader: I) -> Result<(), Error> {
+        lazy_static! {
+            static ref EMOJI_TEST_REGEX: Regex = Regex::new(&format!(r"^{}\s*;\s*{}\s*#\s*{}$",
+                                               EMOJI_SEQUENCE_SPACE_REGEX,
+                                               EMOJI_STATUS_REGEX,
+                                               EMOJI_NAME_REGEX)
+            ).unwrap();
+        };
         for line in reader.lines() {
             if let Ok(line) = line {
-                if !line.trim().starts_with('#') {
-                    let mut cols: Vec<&str> = line.split(';').collect();
+                let line = line.trim();
+                // Only check if it's not a comment/empty line
+                if !line.starts_with('#') & !line.is_empty() {
+                    // Try to match the line
+                    if let Some(captures) = (&*EMOJI_TEST_REGEX as &Regex).captures(line) {
+                        // Extract information
+                        let codepoints: Vec<_> = Self::get_codepoint_sequence(captures.get(1).unwrap().as_str());
+                        let status = captures.get(5).unwrap().as_str();
+                        let _emoji = captures.get(6);
+                        let _version = captures.get(7).unwrap();
+                        let name = captures.get(8).unwrap().as_str();
 
-                    let status_description = cols.pop().map(|status_description| status_description.split('#'));
-                    let codepoints = cols.pop().map(str::trim);
-                    if let (Some(mut status_description), Some(codepoints)) = (status_description, codepoints) {
-                        let _status = status_description.next().map(str::trim);
-                        let description = status_description.next().map(str::trim);
+                        self.update_emoji(codepoints.clone(), None, Some(name));
 
-                        let mut codepoint_sequence = Self::get_codepoint_sequence(codepoints);
-                        if codepoint_sequence.ends_with(&[0xfe0f]) {
-                            codepoint_sequence.pop();
+                        // Don't insert unqualified codepoints unless we don't have a mapping for this name anyway
+                        if status != "unqualified" || self.get_by_name(&name).is_none() {
+                            self.insert_lookup_name(&name, codepoints.clone());
                         }
-
-                        if let Some(description) = description {
-                            if let Some((kind, _)) = self.0.remove(&codepoint_sequence) {
-                                // FIXME: Too bold assumptions
-                                let mut description = description.split(' ');
-                                let emoji = description.next();
-                                let _version = description.next();
-                                let description: String = description.collect_vec().join(" ");
-                                if !description.is_empty() {
-                                    self.insert_name(&description, codepoint_sequence.clone());
-                                    self.insert(codepoint_sequence.clone(), (kind, Some(description)));
-                                    if let Some(emoji) = emoji {
-                                        // Yes, you will be able to use the emojis as file names.
-                                        // Unless your OS prevents you from doing such cursed stuff.
-                                        self.insert_name(emoji, codepoint_sequence);
-                                    }
-                                }
-                            }
-                        }
+                    } else {
+                        warn!("Malformed line in emoji-test.txt: {}", line);
                     }
                 }
             }
@@ -446,6 +423,7 @@ impl EmojiTable {
     const EMOJI_DATA: &'static str = "emoji-data.txt";
     const EMOJI_SEQUENCES: &'static str = "emoji-sequences.txt";
     const EMOJI_ZWJ_SEQUENCES: &'static str = "emoji-zwj-sequences.txt";
+    const EMOJI_VARIATION_SEQUENCES: &'static str = "emoji-variation-sequences.txt";
     const EMOJI_TEST: &'static str = "emoji-test.txt";
     const DATA_FILES: [&'static str; 3] = [
         Self::EMOJI_DATA,
@@ -511,10 +489,20 @@ impl EmojiTable {
         }
     }
 
-    // A simple helper function to build the URLs for the different files.
+    /// A simple helper function to build the URLs for the different files.
     #[inline]
     fn build_url(version: (u32, u32), file: &'static str) -> String {
-        format!("https://unicode.org/Public/emoji/{}.{}/{}", version.0, version.1, file)
+        if version.0 >= 13 && [Self::EMOJI_DATA, Self::EMOJI_VARIATION_SEQUENCES].contains(&file) {
+            format!("https://unicode.org/Public/{}.0.0/ucd/emoji/{}", version.0, file)
+        } else {
+            format!("https://unicode.org/Public/emoji/{}.{}/{}", version.0, version.1, file)
+        }
+    }
+
+    /// A helper function to get emojis by their name directly
+    #[cfg(test)]
+    fn get_codepoint_by_name(&self, name: &str) -> Vec<u32> {
+        self.get_by_name(name).unwrap().0.clone()
     }
 }
 
@@ -585,5 +573,26 @@ impl From<reqwest::Error> for ExpansionError {
 #[cfg(feature = "online")]
 #[test]
 fn test_online() {
-    // TODO: Implement
+    let table = EmojiTable::load_online((13, 0)).unwrap();
+
+    let kissing_face = vec![0x1f617];
+    let smiling_face = vec![0x263a, 0xfe0f];
+    let woman_medium_skin_tone_white_hair = vec![0x1f469, 0x1f3fd, 0x200d, 0x1f9b3];
+
+    assert_eq!(table.get_codepoint_by_name("kissing face"), kissing_face);
+    assert_eq!(table.get_codepoint_by_name("Smiling Face"), smiling_face);
+    assert_eq!(table.get_codepoint_by_name("woman: medium skin tone, white hair"), woman_medium_skin_tone_white_hair);
+    assert_eq!(table.get_codepoint_by_name("woman medium SkiN ToNe WhITe hair"), woman_medium_skin_tone_white_hair);
+
+    assert_eq!(
+        table.get_by_name("woman: medium skin tone, white hair").unwrap().1.0,
+        vec![EmojiKind::EmojiZwjSequence]
+    );
+
+    assert!(table.get_by_name("woman").is_some());
+
+    assert_eq!(
+        table.get_by_name("woman").unwrap().1.0,
+        vec![EmojiKind::Emoji, EmojiKind::ModifierBase, EmojiKind::EmojiPresentation, EmojiKind::Other(String::from("extended pictographic"))]
+    );
 }

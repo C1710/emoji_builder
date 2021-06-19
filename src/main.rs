@@ -98,7 +98,6 @@ fn parse_emojis(args: &BuilderArguments) -> Vec<Emoji> {
     let table = if cfg!(feature = "online") {
         let mut table = table.unwrap_or_default();
         table.expand_all_online((13, 0)).unwrap_or_else(|e| warn!("Couldn't load online emoji tables: {:?}", e));
-        info!("Using emoji table");
         Some(table)
     } else {
         table
@@ -125,14 +124,14 @@ fn parse_emojis(args: &BuilderArguments) -> Vec<Emoji> {
         .filter_map(|path| path.ok())
         .map(|path| path.path())
         .filter(|path| path.is_file())
-        .map(|path| Emoji::from_path(path, &table, false));
+        .map(|path| Emoji::from_path(path, table.as_ref(), false));
 
     let flags = flag_paths
         .into_par_iter()
         .filter_map(|path| path.ok())
         .map(|path| path.path())
         .filter(|path| path.is_file())
-        .map(|path| Emoji::from_path(path, &table, true));
+        .map(|path| Emoji::from_path(path, table.as_ref(), true));
 
 
     let emojis = emojis.chain(flags)
