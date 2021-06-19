@@ -636,9 +636,9 @@ impl AsRef<[u32]> for Emoji {
     }
 }
 
-impl Into<Vec<u32>> for Emoji {
-    fn into(self) -> Vec<u32> {
-        self.sequence
+impl From<Emoji> for Vec<u32> {
+    fn from(emoji: Emoji) -> Self {
+        emoji.sequence
     }
 }
 
