@@ -95,9 +95,19 @@ fn parse_emojis(args: &BuilderArguments) -> Vec<Emoji> {
         None => None,
     };
 
+    let table = if cfg!(feature = "online") {
+        let mut table = table.unwrap_or_default();
+        table.expand_all_online((13, 0)).unwrap_or_else(|e| warn!("Couldn't load online emoji tables: {:?}", e));
+        info!("Using emoji table");
+        Some(table)
+    } else {
+        table
+    };
+
     if table.is_some() {
         info!("Using emoji table");
     }
+
 
     let images = &args.svg_path;
 
