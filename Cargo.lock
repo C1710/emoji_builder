@@ -1817,9 +1817,9 @@ dependencies = [
 
 [[package]]
 name = "resvg"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac9efbe9c239253e11e518352c5f015ec0c69e73658eed153670e853e1b78e40"
+checksum = "d8e502b9b8351410e566a74f801374692b76a6469fc044e70ae207979a17e041"
 dependencies = [
  "jpeg-decoder",
  "log",
@@ -2215,6 +2215,7 @@ dependencies = [
  "lazy_static 1.4.0",
  "memchr",
  "mio",
+ "num_cpus",
  "pin-project-lite 0.1.11",
  "slab",
 ]
@@ -2408,9 +2409,9 @@ dependencies = [
 
 [[package]]
 name = "usvg"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ffbeb91d06989028c9c5e44d14d78b0cacdec56a613bb146e7a70007b1b6163"
+checksum = "a0cda4804f333733081c9c41b4f23a4b0e246c049df9f5680ba26044b7afa22f"
 dependencies = [
  "base64",
  "data-url",
