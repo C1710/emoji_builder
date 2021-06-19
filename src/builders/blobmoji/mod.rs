@@ -36,7 +36,7 @@ use pyo3::Python;
 use sha2::{Digest, Sha256};
 use sha2::digest::generic_array::GenericArray;
 use usvg::FitTo;
-use tiny_skia::PixmapMut;
+use tiny_skia::Pixmap;
 
 use crate::builder::{EmojiBuilder, PreparationResult};
 use crate::changes::{CheckError, FileHashes};
@@ -242,12 +242,12 @@ impl EmojiBuilder for Blobmoji {
                 // Wave the flag if it is one and if we're supposed to.
                 let (rendered, width, height) = if self.waveflag && emoji.is_flag() {
                     waveflag::waveflag(
-                        &rendered,
+                        rendered.data(),
                         width as usize,
                         height,
                         (height as f32 * WAVE_FACTOR) as usize)
                 } else {
-                    (rendered, width, height)
+                    (rendered.data().to_vec(), width, height)
                 };
                 // The rendering already accounted for the case that this is a flag and that the
                 // image will get taller.
@@ -516,7 +516,7 @@ impl Blobmoji {
     /// # Returns
     /// An `Option` containing the image as a vector of RGBA pixels and the dimensions of the
     /// image.
-    fn render_svg(&self, emoji: &Emoji) -> Option<(Vec<u8>, (u32, u32))> {
+    fn render_svg(&self, emoji: &Emoji) -> Option<(Pixmap, (u32, u32))> {
         if let Some(svg_path) = &emoji.svg_path {
             let opt = usvg::Options {
                 // Just as a fallback. Default is "cursive",
@@ -567,23 +567,14 @@ impl Blobmoji {
                 // This is now done in the same way as the rendering
                 let rendered_size = fit_to.fit_to(size.to_screen_size()).unwrap();
 
-                let mut data = Vec::with_capacity(4 * RENDER_AND_CHARACTER_HEIGHT as usize * RENDER_WIDTH as usize);
-                // It's okay to do that here as the content gets overwritten anyway
-                unsafe {
-                    data.set_len(4 * RENDER_AND_CHARACTER_HEIGHT as usize * RENDER_WIDTH as usize);
-                }
-                if rendered_size.height() < RENDER_AND_CHARACTER_HEIGHT {
-                    // Our buffer is a bit too large
-                    data.fill(0);
-                }
-
-                let pixmap = PixmapMut::from_bytes(&mut data, RENDER_WIDTH, RENDER_AND_CHARACTER_HEIGHT).unwrap();
+                // This is copied from the minimal example for resvg
+                let mut pixmap = tiny_skia::Pixmap::new(rendered_size.width(), rendered_size.height()).unwrap();
 
                 // This is the point where it's actually rendered
-                let img = resvg::render(&tree, fit_to, pixmap);
+                let img = resvg::render(&tree, fit_to, pixmap.as_mut());
 
                 if img.is_some() {
-                    Some((data, rendered_size.dimensions()))
+                    Some((pixmap, rendered_size.dimensions()))
                 } else {
                     error!("Failed to render {}", emoji);
                     None
