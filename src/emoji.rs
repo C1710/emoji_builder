@@ -105,7 +105,7 @@ impl Emoji {
     /// ```
     pub fn from_sequence(sequence: &str, table: Option<&EmojiTable>) -> Result<Emoji, EmojiError> {
         lazy_static! {
-            static ref HEX_SEQUENCE: Regex = Regex::new(r"([a-fA-F0-9]{2,})[-_. ]").unwrap();
+            static ref HEX_SEQUENCE: Regex = Regex::new(r"([a-fA-F0-9]{1,8})([-_. ]|$)").unwrap();
         }
         let matches: CaptureMatches = HEX_SEQUENCE.captures_iter(&sequence);
         let code_sequences: Vec<u32> = matches
@@ -146,7 +146,7 @@ impl Emoji {
             }
             Ok(emoji)
         } else {
-            Err(EmojiError::NoValidCodepointsFound)
+            Err(EmojiError::NoValidCodepointsFound(String::from("Empty code sequence")))
         }
     }
 
@@ -299,7 +299,7 @@ impl Emoji {
                     match table {
                         Some(table) => match Self::from_name(name, table) {
                             Ok(emoji) => Ok(emoji),
-                            Err(err) => if let EmojiError::NoValidCodepointsFound = err {
+                            Err(err) => if let EmojiError::NoValidCodepointsFound(_) = err {
                                 debug!("{} is not a recognized emoji name", name);
                                 // Now try to parse it as a sequence
                                 Self::from_sequence(name, Some(table))
@@ -329,7 +329,7 @@ impl Emoji {
                 kinds: Some(kinds.clone()),
                 svg_path: None,
             }),
-            None => Err(EmojiError::NoValidCodepointsFound)
+            None => Err(EmojiError::NoValidCodepointsFound(name.to_owned()))
         }
     }
 
@@ -809,7 +809,7 @@ pub enum EmojiError {
     /// Indicates that either no codepoint sequence has been parsed or that a string didn't
     /// match the recognized patterns for codepoint sequences or that the given table does not contain
     /// the name of the emoji.
-    NoValidCodepointsFound,
+    NoValidCodepointsFound(String),
     /// Indicates that the given sequence could not be parsed as a flag sequence (i.e. it is not a valid
     /// ISO 3166-1/2 code).
     NoValidFlagSequence,

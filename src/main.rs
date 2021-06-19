@@ -135,7 +135,13 @@ fn parse_emojis(args: &BuilderArguments) -> Vec<Emoji> {
 
 
     let emojis = emojis.chain(flags)
-        .filter_map(std::result::Result::ok);
+        .filter_map(|emoji| match emoji {
+            Ok(emoji) => Some(emoji),
+            Err(err) => {
+                error!("{:?}", err);
+                None
+            }
+        });
 
     // remove all multi character sequences if no_sequences is set
     if args.no_sequences {
