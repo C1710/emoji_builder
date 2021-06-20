@@ -1,11 +1,12 @@
-FROM rust:1.44
+FROM rust
 
-RUN apt update && apt install -y \
+# https://mengfung.com/2020/09/docker-apt-get-cleanup/
+RUN apt-get update && apt-gwt install -y \
     python3 \
     python3-dev \
     python3-pip \
-    clang \
-    fonts-comic-neue
+    fonts-comic-neue \
+    && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
 RUN mkdir emoji_builder
 WORKDIR /emoji_builder
@@ -16,10 +17,16 @@ RUN python3 -m pip install -r requirements.txt
 
 ADD . /emoji_builder
 
-# Not sure whether tests should happen in the container build process
-# RUN LD_LIBRARY_PATH=$(echo /usr/lib/python3.*/config-3.*) cargo test
-RUN LD_LIBRARY_PATH=$(echo /usr/lib/python3.*/config-3.*) cargo build --release
+RUN ./github_workflow_setup.sh && \
+    cargo build --release && \
+    mv target/release/emoji_builder /bin && \
+    cargo clean
 
-RUN cp target/release/emoji_builder /bin
 
-CMD LD_LIBRARY_PATH=$(echo /usr/lib/python3.*/config-3.*) /bin/emoji_builder
+VOLUME /emoji
+
+ENV CLI_ARGS
+
+WORKDIR /emoji
+
+CMD /emoji_builder/github_workflow_setup.sh && /bin/emoji_builder $CLI_ARGS
