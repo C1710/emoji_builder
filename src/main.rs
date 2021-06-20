@@ -35,6 +35,7 @@ use emoji_builder::builders::blobmoji::Blobmoji;
 use emoji_builder::emoji::Emoji;
 use emoji_builder::emoji_tables::EmojiTable;
 use std::fs::create_dir_all;
+use std::io::BufReader;
 
 fn main() {
     build::<Blobmoji>();
@@ -95,7 +96,24 @@ fn parse_emojis(args: &BuilderArguments) -> Vec<Emoji> {
         None => None,
     };
 
-    let table = if cfg!(feature = "online") {
+    let table = if let Some(emoji_test) = args.emoji_test.as_ref() {
+        let reader = std::fs::File::open(emoji_test).map(BufReader::new);
+        if let Ok(reader) = reader {
+            let mut table = table.unwrap_or_default();
+            table.expand_descriptions_from_test_data(reader)
+                .map(|_| table)
+                .map_err(|err|
+                    error!("Error in parsing emoji-test.txt: {}", err)
+                )
+                .ok()
+        } else {
+            table
+        }
+    } else {
+        table
+    };
+
+    let table = if cfg!(feature = "online") && !args.offline {
         let mut table = table.unwrap_or_default();
         table.expand_all_online((13, 0)).unwrap_or_else(|e| warn!("Couldn't load online emoji tables: {:?}", e));
         Some(table)
@@ -158,7 +176,9 @@ struct BuilderArguments<'a> {
     build_path: PathBuf,
     output_path: PathBuf,
     builder_matches: HashMap<String, Option<ArgMatches<'a>>>,
-    no_sequences: bool
+    no_sequences: bool,
+    emoji_test: Option<PathBuf>,
+    offline: bool
 }
 
 fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<String>>) -> BuilderArguments<'a> {
@@ -199,6 +219,10 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
         None => None,
     };
 
+    let emoji_test = matches.value_of("emoji_test").map(PathBuf::from);
+
+    let offline = matches.is_present("offline");
+
     let tables = match tables {
         Some(tables) => Some(PathBuf::from(tables)),
         None => None,
@@ -221,6 +245,8 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
         build_path: build,
         output_path,
         builder_matches,
-        no_sequences
+        no_sequences,
+        emoji_test,
+        offline
     }
 }

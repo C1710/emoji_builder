@@ -431,6 +431,8 @@ impl EmojiTable {
         Self::EMOJI_ZWJ_SEQUENCES
     ];
 
+
+
     /// This function is <del>equivalent to</del> creating an `EmojiTable` and directly calling `expand_all_online` on it.`
     #[cfg(feature = "online")]
     pub fn load_online(version: (u32, u32)) -> Result<EmojiTable, ExpansionError> {
@@ -457,18 +459,24 @@ impl EmojiTable {
         let client_builder = reqwest::blocking::ClientBuilder::new();
         let client = client_builder.build()?;
 
-        Self::DATA_FILES.iter()
-            .map(|file| self.expand_data_online(&client, version, file))
-            // TODO: Propagate errors instead of unwrapping
-            .for_each(Result::unwrap);
+        let test_expansion_result = self.expand_descriptions_from_test_online(&client, version);
 
-        self.expand_descriptions_from_test_online(&client, version)
+        let errors: Vec<_> = Self::DATA_FILES.iter()
+            .map(|file| self.expand_data_online(&client, version, file))
+            .chain(vec![test_expansion_result])
+            .filter_map(|result| result.err())
+            .collect();
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.into())
+        }
     }
 
     #[cfg(feature = "online")]
-    fn expand_data_online(&mut self, client: &reqwest::blocking::Client, version: (u32, u32), file: &'static str) -> Result<(), reqwest::Error> {
+    fn expand_data_online(&mut self, client: &reqwest::blocking::Client, version: (u32, u32), file: &'static str) -> Result<(), ExpansionError> {
         let reader = Self::get_data_file_online(client, version, file)?;
-        self.expand(reader).unwrap();
+        self.expand(reader)?;
         Ok(())
     }
 
@@ -483,10 +491,7 @@ impl EmojiTable {
     #[cfg(feature = "online")]
     fn expand_descriptions_from_test_online(&mut self, client: &reqwest::blocking::Client, version: (u32, u32)) -> Result<(), ExpansionError> {
         let reader = Self::get_data_file_online(client, version, Self::EMOJI_TEST)?;
-        match self.expand_descriptions_from_test_data(reader) {
-            Ok(()) => Ok(()),
-            Err(error) => Err(error.into())
-        }
+        self.expand_descriptions_from_test_data(reader).map_err(|err| err.into())
     }
 
     /// A simple helper function to build the URLs for the different files.
@@ -553,6 +558,7 @@ pub enum _EmojiTestStatus {
 #[derive(Debug)]
 pub enum ExpansionError {
     Io(std::io::Error),
+    Multiple(Vec<ExpansionError>),
     #[cfg(feature = "online")]
     Reqwest(reqwest::Error),
 }
@@ -560,6 +566,12 @@ pub enum ExpansionError {
 impl From<std::io::Error> for ExpansionError {
     fn from(err: std::io::Error) -> Self {
         ExpansionError::Io(err)
+    }
+}
+
+impl From<Vec<ExpansionError>> for ExpansionError {
+    fn from(errors: Vec<ExpansionError>) -> Self {
+        Self::Multiple(errors)
     }
 }
 
