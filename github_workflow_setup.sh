@@ -1,6 +1,6 @@
-# From: https://github.com/PyO3/pyo3/blob/master/ci/travis/setup.sh
+# From: https://github.com/PyO3/pyo3/blob/master/ci/travis/setup.sh Modified to use python3 instead of python
 ### Setup python linker flags ##################################################
-PYTHON_LIB=$(python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
+PYTHON_LIB=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
 
 export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$PYTHON_LIB:$HOME/rust/lib"
 

@@ -1,7 +1,7 @@
-FROM rust
+FROM rust as builder
 
 # https://mengfung.com/2020/09/docker-apt-get-cleanup/
-RUN apt-get update && apt-gwt install -y \
+RUN apt-get update && apt-get install -y \
     python3 \
     python3-dev \
     python3-pip \
@@ -15,18 +15,24 @@ COPY requirements.txt /emoji_builder/
 
 RUN python3 -m pip install -r requirements.txt
 
-ADD . /emoji_builder
+COPY . /emoji_builder
 
-RUN ./github_workflow_setup.sh && \
-    cargo build --release && \
-    mv target/release/emoji_builder /bin && \
-    cargo clean
+RUN /emoji_builder/github_workflow_setup.sh && \
+    cargo install --path .
 
+FROM python:slim
 
 VOLUME /emoji
 
-ENV CLI_ARGS
+ENV CLI_ARGS=blobmoji
+
+COPY requirements.txt .
+
+RUN python3 -m pip install -r requirements.txt
+
+COPY --from=builder /usr/local/cargo/bin/emoji_builder /bin/emoji_builder
+COPY github_workflow_setup.sh /github_workflow_setup.sh
 
 WORKDIR /emoji
 
-CMD /emoji_builder/github_workflow_setup.sh && /bin/emoji_builder $CLI_ARGS
+CMD /github_workflow_setup.sh && /bin/emoji_builder $CLI_ARGS
