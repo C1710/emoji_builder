@@ -161,11 +161,26 @@ fn parse_emojis(args: &BuilderArguments) -> Vec<Emoji> {
             }
         });
 
+
     // remove all multi character sequences if no_sequences is set
     if args.no_sequences {
         emojis.filter(|emoji| emoji.sequence.len() <= 1).collect()
     } else {
-        emojis.collect()
+        let emojis: Vec<_> = emojis.collect();
+        if let Some(table) = table {
+            // Validate against the table
+            let emoji_set = emojis.iter()
+                .map(|emoji| emoji.sequence.clone())
+                .collect();
+            let (result, additional) = table.validate(&emoji_set, true);
+            if let Err(missing) = result {
+                missing.iter()
+                    .for_each(|missing| warn!("Missing emoji: {}", missing));
+            }
+            additional.iter()
+                .for_each(|additional| info!("Additional emoji: {}", additional));
+        }
+        emojis
     }
 }
 

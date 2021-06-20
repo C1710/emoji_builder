@@ -19,7 +19,7 @@
 //! [unicode]: https://unicode.org/Public/emoji/13.0/
 
 use std::collections::hash_map::RandomState;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Cursor, Error};
 use std::path::Path;
@@ -28,7 +28,7 @@ use std::str::FromStr;
 use itertools::Itertools;
 use regex::Regex;
 
-use crate::emoji::EmojiKind;
+use crate::emoji::{EmojiKind, Emoji};
 
 /// A code sequence
 type EmojiTableKey = Vec<u32>;
@@ -508,6 +508,63 @@ impl EmojiTable {
     #[cfg(test)]
     fn get_codepoint_by_name(&self, name: &str) -> Vec<u32> {
         self.get_by_name(name).unwrap().0.clone()
+    }
+
+    // https://stackoverflow.com/a/34969944
+    /// Validates whether all emojis from this table can be found in a collection of emojis and vice versa.
+    /// As it is usually not a problem to have additional emojis in a font, these are not returned as an error.
+    /// # Returns
+    /// `(result, additional_emojis)` with `result` being either `Ok(())`, if all emojis con be found
+    /// or `Err(missing_emojis)` with the emojis that are missing.
+    /// `additional_emojis` are those emojis that are found in the font, but not in the table; might be empty.
+    pub fn validate(&self, emojis: &HashSet<EmojiTableKey>, ignore_fe0f: bool) -> (Result<(), Vec<Emoji>>, Vec<Emoji>) {
+        // TODO: Introduce the status to filter out unqualified emojis/non-RGI
+        let table_emojis = self.0.keys();
+        let table_emojis: HashSet<EmojiTableKey> = if ignore_fe0f {
+            table_emojis
+                .map(|emoji| emoji.iter()
+                    .filter_map(|codepoint| if *codepoint != 0xfe0f {
+                        Some(*codepoint)
+                    } else {
+                        None
+                    } )
+                    .collect_vec()
+                )
+                .collect()
+        } else {
+            table_emojis.cloned().collect()
+        };
+        let missing = table_emojis
+            .difference(emojis)
+            .filter_map(|emoji| Emoji::from_u32_sequence(emoji.clone(), Some(&self)).ok()).collect_vec();
+        let emojis = if ignore_fe0f {
+            // FIXME: We don't actually want to clone here
+            emojis.clone()
+        } else {
+            emojis.iter()
+                .map(|emoji| emoji.iter()
+                    .filter_map(|codepoint| if *codepoint != 0xfe0f {
+                        Some(*codepoint)
+                    } else {
+                        None
+                    } )
+                    .collect_vec()
+                )
+                .collect()
+        };
+        let additional = emojis
+            .difference(&table_emojis)
+            // Note: it doesn't make sense here to provide this emoji table as we have just found out
+            // that it doesn't contain this particular emoji!
+            .filter_map(|emoji| Emoji::from_u32_sequence(emoji.clone(), None).ok()).collect_vec();
+        (
+            if missing.is_empty() {
+                Ok(())
+            } else {
+                Err(missing)
+            },
+            additional
+        )
     }
 }
 
