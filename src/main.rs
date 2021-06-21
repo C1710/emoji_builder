@@ -175,10 +175,13 @@ fn parse_emojis(args: &BuilderArguments) -> Vec<Emoji> {
             let (result, additional) = table.validate(&emoji_set, true);
             if let Err(missing) = result {
                 missing.iter()
-                    .for_each(|missing| warn!("Missing emoji: {}", missing));
+                    .for_each(|missing| warn!("Missing emoji: {} (Codepoint: {:X?}, Emoji: {})",
+                                              missing,
+                                              missing.sequence,
+                                              missing.display_emoji()));
             }
             additional.iter()
-                .for_each(|additional| info!("Additional emoji: {}", additional));
+                .for_each(|additional| info!("Additional emoji: {} (Codepoint: {:X?}, Emoji: )", additional, additional.sequence));
         }
         emojis
     }

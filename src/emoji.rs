@@ -611,6 +611,11 @@ impl Emoji {
             .all(|codepoint| Self::REGION_LETTERS.contains(codepoint) ||
                 Self::REGION_DIGITS.contains(codepoint))
     }
+
+    pub fn display_emoji(&self) -> String {
+        self.sequence.iter().filter_map(|codepoint| char::from_u32(*codepoint))
+            .collect()
+    }
 }
 
 impl From<&[u32]> for Emoji {

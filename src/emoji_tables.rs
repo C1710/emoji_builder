@@ -519,7 +519,15 @@ impl EmojiTable {
     /// `additional_emojis` are those emojis that are found in the font, but not in the table; might be empty.
     pub fn validate(&self, emojis: &HashSet<EmojiTableKey>, ignore_fe0f: bool) -> (Result<(), Vec<Emoji>>, Vec<Emoji>) {
         // TODO: Introduce the status to filter out unqualified emojis/non-RGI
-        let table_emojis = self.0.keys();
+        let table_emojis = self.0
+            .iter()
+            // Only validate emojis that we have names for (i.e. they're in emoji-test.txt. Otherwise they won't matter anyway)
+            // And those with an EmojiKind, as otherwise it's likely not an emoji
+            .filter_map(|(key, (kinds, name))| if name.is_some() && !kinds.is_empty() {
+                Some(key)
+            } else {
+                None
+            });
         let table_emojis: HashSet<EmojiTableKey> = if ignore_fe0f {
             table_emojis
                 .map(|emoji| emoji.iter()
