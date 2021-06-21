@@ -18,14 +18,15 @@ import sys
 
 from fontTools import ttx
 from fontTools.ttLib.tables import otTables
+from fontTools.pens.ttGlyphPen import TTGlyphPen
+from fontTools.ttLib.tables._c_m_a_p import CmapSubtable
+from fontTools.ttLib import newTable
 
 import add_emoji_gsub
 import add_aliases
 
-## MODIFIED: Had to be removed in order to be able to import it inside Rust
-# sys.path.append(
-#     path.join(os.path.dirname(__file__), 'third_party', 'color_emoji'))
-## END OF MODIFICATION
+sys.path.append(
+  path.join(os.path.dirname(__file__), 'third_party', 'color_emoji'))
 from png import PNG
 
 
@@ -122,6 +123,7 @@ def get_all_seqs(font, seq_to_advance):
   """Copies the sequences from seq_to_advance and extends it with single-
   codepoint sequences from the GlyphOrder table as well as those internal
   to sequences in seq_to_advance.  Reduces the GlyphOrder table. """
+
   all_seqs = set(seq_to_advance.keys())
   # using collect_cps includes cps internal to a seq
   cps = collect_cps(all_seqs)
@@ -140,7 +142,7 @@ def get_font_cmap(font):
   return font['cmap'].tables[0].cmap
 
 
-def add_glyph_data(font, seqs, seq_to_advance, vadvance):
+def add_glyph_data(font, seqs, seq_to_advance, vadvance, add_glyf):
   """Add hmtx and GlyphOrder data for all sequences in seqs, and ensures there's
   a cmap entry for each single-codepoint sequence.  Seqs not in seq_to_advance
   will get a zero advance."""
@@ -163,6 +165,16 @@ def add_glyph_data(font, seqs, seq_to_advance, vadvance):
   cmap = get_font_cmap(font)
   hmtx = font['hmtx'].metrics
   vmtx = font['vmtx'].metrics
+
+  # Add glyf table so empty glyphs will be added to ensure compatibility
+  # with systems requiring a glyf table, like Windows 10.
+  if add_glyf:
+    pen = TTGlyphPen(None)
+    empty_glyph = pen.glyph()
+    font['loca'] = newTable("loca")
+    font['glyf'] = glyf_table = newTable("glyf")
+    glyf_table.glyphOrder = font.getGlyphOrder()
+    glyf_table.glyphs = {g: empty_glyph for g in glyf_table.glyphOrder}
 
   # We don't expect sequences to be in the glyphOrder, since we removed all the
   # single-cp sequences from it and don't expect it to already contain names
@@ -187,10 +199,11 @@ def add_glyph_data(font, seqs, seq_to_advance, vadvance):
     if name not in reverseGlyphMap:
       font.glyphOrder.append(name)
       updatedGlyphOrder=True
+    if add_glyf:
+      glyf_table[name] = empty_glyph
 
   if updatedGlyphOrder:
     delattr(font, '_reverseGlyphOrderDict')
-
 
 def add_aliases_to_cmap(font, aliases):
   """Some aliases might map a single codepoint to some other sequence.  These
@@ -276,15 +289,15 @@ def add_ligature_sequences(font, seqs, aliases):
   """Add ligature sequences."""
 
   seq_to_target_name = {
-      seq: seq_name(seq) for seq in seqs if len(seq) > 1}
+    seq: seq_name(seq) for seq in seqs if len(seq) > 1}
   if aliases:
     seq_to_target_name.update({
-        seq: seq_name(aliases[seq]) for seq in aliases if len(seq) > 1})
+      seq: seq_name(aliases[seq]) for seq in aliases if len(seq) > 1})
   if not seq_to_target_name:
     return
 
   rtl_seq_to_target_name = {
-      get_rtl_seq(seq): name for seq, name in seq_to_target_name.items()}
+    get_rtl_seq(seq): name for seq, name in seq_to_target_name.items()}
   seq_to_target_name.update(rtl_seq_to_target_name)
   # sequences that don't have rtl variants get mapped to the empty sequence,
   # delete it.
@@ -328,14 +341,30 @@ def add_ligature_sequences(font, seqs, aliases):
     for seq, name in pairs:
       add_ligature(lookup, cmap, seq, name)
 
+def add_cmap_format_4(font):
+  """Add cmap format 4 table for Windows support, based on the
+  format 12 cmap."""
 
-def update_font_data(font, seq_to_advance, vadvance, aliases):
+  cmap = get_font_cmap(font)
+
+  newtable = CmapSubtable.newSubtable(4)
+  newtable.platformID = 3
+  newtable.platEncID = 1
+  newtable.language = 0
+
+  # Format 4 only has unicode values 0x0000 to 0xFFFF
+  newtable.cmap = {cp: name for cp, name in cmap.items() if cp <= 0xFFFF}
+
+  font['cmap'].tables.append(newtable)
+
+def update_font_data(font, seq_to_advance, vadvance, aliases, add_cmap4, add_glyf):
   """Update the font's cmap, hmtx, GSUB, and GlyphOrder tables."""
   seqs = get_all_seqs(font, seq_to_advance)
-  add_glyph_data(font, seqs, seq_to_advance, vadvance)
+  add_glyph_data(font, seqs, seq_to_advance, vadvance, add_glyf)
   add_aliases_to_cmap(font, aliases)
   add_ligature_sequences(font, seqs, aliases)
-
+  if add_cmap4:
+    add_cmap_format_4(font)
 
 def apply_aliases(seq_dict, aliases):
   """Aliases is a mapping from sequence to replacement sequence.  We can use
@@ -351,15 +380,15 @@ def apply_aliases(seq_dict, aliases):
   return usable_aliases
 
 
-def update_ttx(in_file, out_file, image_dirs, prefix, ext, aliases_file):
+def update_ttx(in_file, out_file, image_dirs, prefix, ext, aliases_file, add_cmap4, add_glyf):
   if ext != '.png':
     raise Exception('extension "%s" not supported' % ext)
 
   seq_to_file = collect_seq_to_file(image_dirs, prefix, ext)
   if not seq_to_file:
     raise ValueError(
-        'no sequences with prefix "%s" and extension "%s" in %s' % (
-            prefix, ext, ', '.join(image_dirs)))
+      'no sequences with prefix "%s" and extension "%s" in %s' % (
+        prefix, ext, ', '.join(image_dirs)))
 
   aliases = None
   if aliases_file:
@@ -375,7 +404,7 @@ def update_ttx(in_file, out_file, image_dirs, prefix, ext, aliases_file):
 
   vadvance = font['vhea'].advanceHeightMax if 'vhea' in font else lineheight
 
-  update_font_data(font, seq_to_advance, vadvance, aliases)
+  update_font_data(font, seq_to_advance, vadvance, aliases, add_cmap4, add_glyf)
 
   font.saveXML(out_file)
 
@@ -383,26 +412,30 @@ def update_ttx(in_file, out_file, image_dirs, prefix, ext, aliases_file):
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument(
-      '-f', '--in_file', help='ttx input file', metavar='file', required=True)
+    '-f', '--in_file', help='ttx input file', metavar='file', required=True)
   parser.add_argument(
-      '-o', '--out_file', help='ttx output file', metavar='file', required=True)
+    '-o', '--out_file', help='ttx output file', metavar='file', required=True)
   parser.add_argument(
-      '-d', '--image_dirs', help='directories containing image files',
-      nargs='+', metavar='dir', required=True)
+    '-d', '--image_dirs', help='directories containing image files',
+    nargs='+', metavar='dir', required=True)
   parser.add_argument(
-      '-p', '--prefix', help='file prefix (default "emoji_u")',
-      metavar='pfx', default='emoji_u')
+    '-p', '--prefix', help='file prefix (default "emoji_u")',
+    metavar='pfx', default='emoji_u')
   parser.add_argument(
-      '-e', '--ext', help='file extension (default ".png", currently only '
-      '".png" is supported',  metavar='ext', default='.png')
+    '-e', '--ext', help='file extension (default ".png", currently only '
+                        '".png" is supported',  metavar='ext', default='.png')
   parser.add_argument(
-      '-a', '--aliases', help='process alias table', const='emoji_aliases.txt',
-      nargs='?', metavar='file')
+    '-a', '--aliases', help='process alias table', const='emoji_aliases.txt',
+    nargs='?', metavar='file')
+  parser.add_argument(
+    '--add_cmap4', help='add cmap format 4 table', dest='add_cmap4', action='store_true')
+  parser.add_argument(
+    '--add_glyf', help='add glyf and loca tables', dest='add_glyf', action='store_true')
   args = parser.parse_args()
 
   update_ttx(
-      args.in_file, args.out_file, args.image_dirs, args.prefix, args.ext,
-      args.aliases)
+    args.in_file, args.out_file, args.image_dirs, args.prefix, args.ext,
+    args.aliases, args.add_cmap4, args.add_glyf)
 
 
 if __name__ == '__main__':
