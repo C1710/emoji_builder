@@ -25,10 +25,12 @@
 //! [noto]: https://github.com/googlefonts/noto-emoji
 //! [filemojicompat]: https://github.com/c1710/filemojicompat
 
+// Microsoft, Windows are trademarks of the Microsoft group of companies.
+
 use std::collections::HashMap;
 use std::fs::{copy, create_dir_all, File, remove_file, rename};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 use std::str::FromStr;
 use clap::{App, Arg, ArgMatches, SubCommand};
 use itertools::Itertools;
@@ -60,6 +62,7 @@ pub struct Blobmoji {
     fontdb: usvg::fontdb::Database,
     waveflag: bool,
     reduce_colors: Option<Box<ReduceColors>>,
+    build_win: bool
 }
 
 const WAVE_FACTOR: f32 = 0.1;
@@ -195,6 +198,9 @@ impl EmojiBuilder for Blobmoji {
                 Ok(())
             }?;
 
+            // Check whether we want to build a Windows-compatible font as well
+            let build_win = matches.is_present("win10");
+
             Ok(Box::new(Blobmoji {
                 build_path,
                 hashes,
@@ -204,6 +210,7 @@ impl EmojiBuilder for Blobmoji {
                 fontdb,
                 waveflag,
                 reduce_colors,
+                build_win
             }))
         } else {
             Ok(Box::new(Blobmoji {
@@ -215,6 +222,7 @@ impl EmojiBuilder for Blobmoji {
                 fontdb,
                 waveflag: false,
                 reduce_colors: None,
+                build_win: false
             }))
         }
     }
@@ -311,110 +319,15 @@ impl EmojiBuilder for Blobmoji {
         self.store_prepared(&emojis)?;
 
         if !self.render_only {
-            // TODO: Build the font (the following steps are copied from the original Makefile
-            //       (cf. https://github.com/googlefonts/noto-emoji/blob/master/Makefile)
-            // (% is just used as a placeholder, just like in the Makefile)
-            // 1. (from the documentation: "[...] extends the cmap, hmtx, GSUB and GlyphOrder tabled
-            //     [...] apply aliases [...]"
-            //    python3 add_glyphs.py -f "%.ttx.tmpl" -o "%.ttx" -d "<PNG-dir>" -a emoji_aliases.txt
-            // 2. (Seems to use the TTX-tool to overwrite the old font)
-            //    rm -f %.ttf
-            //    ttx   %.ttx
-            // 3. ???? (we will not check sequences.
-            //    If this should be implemented, it will be at a much earlier point.)
-            //    (About that -5:
-            //     # flag for emoji builder.  Default to legacy small metrics for the time being.)
-            //    python3 third_party/color_emoji/emoji_builder.py -5 -V <name>.tmpl.ttf "<name>.ttf" "<PNG-dir>/emoji_u"
-            //    python3 map_pua_emoji.py "<name>.ttf" "<name>.ttf-with-pua"
-            //    // Is this step still necessary?
-            //    [python3] add_vs_cmap.py -vs 2640 2642 2695 --dstdir '.' -o "<name>.ttf-with-pua-varse1" "<name>.ttf-with-pua"
-            //    mv "<name>.ttf-with-pua-varse1" "<name>.ttf" ????
-            //    rm "<name>.ttf-with-pua"
-
-            // TODO: - Understand add_glyphs, find a workaround so we don't need to deal with files there
-            //       - Integrate TTX (to compile the .ttx to a .ttf)
-            //       - Understand what emoji_builder.py does
-            //       - Understand what map_pua_emoji does
-            //       - Check how and whether add_vs_cmap.py is actually needed here or if it needs to be
-            //         moved to an earlier step.
-            //       - Implement
-
-            // TODO: Handle errors
-            info!("Adding glyphs");
-            match noto_emoji_utils::add_glyphs(
-                &self.aliases,
-                &emojis,
-                self.build_path.join(TMPL_TTX_TMPL),
-                self.build_path.join(TMPL_TTX)
-            ) {
-                Ok(_) => (),
-                Err(err) => {
-                    let gil = Python::acquire_gil();
-                    let py = gil.python();
-                    err.print(py);
-                }
-            };
-
-            let tmpl_ttf = self.build_path.join(TMPL_TTF);
-            // TODO: This if-condition might be unnecessary
-            if tmpl_ttf.exists() {
-                remove_file(tmpl_ttf).unwrap();
-            }
-
-            info!("Building TTF");
-            match noto_emoji_utils::build_ttf(&self.build_path) {
-                Ok(_) => (),
-                Err(err) => {
-                    let gil = Python::acquire_gil();
-                    let py = gil.python();
-                    err.print(py);
-                    panic!()
-                }
-            };
-
-            info!("Doing... something");
-            match noto_emoji_utils::emoji_builder(&self.build_path) {
-                Ok(_) => (),
-                Err(err) => {
-                    let gil = Python::acquire_gil();
-                    let py = gil.python();
-                    err.print(py);
-                    panic!()
-                }
-            };
-
-            info!("Mapping PUA");
-            match noto_emoji_utils::map_pua(&self.build_path) {
-                Ok(_) => (),
-                Err(err) => {
-                    let gil = Python::acquire_gil();
-                    let py = gil.python();
-                    err.print(py);
-                    panic!()
-                }
-            };
-
-            info!("Adding Version Selector");
-            match noto_emoji_utils::add_vs_cmap(&self.build_path) {
-                Ok(_) => (),
-                Err(err) => {
-                    let gil = Python::acquire_gil();
-                    let py = gil.python();
-                    err.print(py);
-                    panic!()
-                }
-            };
-
-            rename(
-                self.build_path.join(TTF_WITH_PUA_VARSE1),
-                self.build_path.join(TTF)
-            ).unwrap();
-
-            copy(self.build_path.join(TTF), output_file).unwrap();
-
-            remove_file(self.build_path.join(TTF_WITH_PUA)).unwrap();
-            remove_file(self.build_path.join(TMPL_TTX)).unwrap();
-            remove_file(self.build_path.join(TMPL_TTF)).unwrap();
+            // Normal
+            self.build_font(&emojis, &output_file, false);
+            // For Windows 10 support
+            let mut output_file_stem_windows = output_file.file_stem().unwrap_or_default().to_os_string();
+            output_file_stem_windows.push("_win");
+            let output_file_windows = output_file
+                .with_file_name(output_file_stem_windows)
+                .with_extension(output_file.extension().unwrap_or_default());
+            self.build_font(&emojis, &output_file_windows, true);
         }
 
         Ok(())
@@ -485,7 +398,13 @@ impl EmojiBuilder for Blobmoji {
                 .help("A template file for the font, e.g. containing version and author information")
                 .takes_value(true)
                 .required(false)
-                .value_name("FILE"));
+                .value_name("FILE"))
+            .arg(Arg::with_name("win10")
+                .long("win")
+                .help("Build a Windows 10-compatible font as well (it contains additional font tables)")
+                .long_help("Build a Windows 10-compatible font as well (it contains additional font tables).\nMicrosoft, Windows are trademarks of the Microsoft group of companies.")
+                .takes_value(false)
+                .required(false));
         let reduce_color_args = ReduceColors::cli_arguments(&subcommand.p.global_args);
         subcommand.args(&reduce_color_args)
     }
@@ -590,8 +509,6 @@ impl Blobmoji {
         }
     }
 
-
-
     /// Performs the quantization process which apparently does some sort of posterization to reduce
     /// the number of colors in the image.
     /// Due to licensing issues, this function (unfortunately) does nothing at all and is only
@@ -605,7 +522,6 @@ impl Blobmoji {
     fn quantize_to_png(&self, _emoji: &Emoji, _img: &mut [u8]) -> Option<Vec<u8>> {
         None
     }
-
 
     const EMPTY_PIXEL: [u8; 4] = [0; 4];
 
@@ -623,9 +539,6 @@ impl Blobmoji {
         filename.push_str(".png");
         filename
     }
-
-
-
 
     fn store_prepared(&mut self, emojis: &HashMap<&Emoji, Result<<Blobmoji as EmojiBuilder>::PreparedEmoji, <Blobmoji as EmojiBuilder>::Err>>) -> Result<(), BlobmojiError> {
         // Collect all errors that occurred while checking the hashes and save those that were successful
@@ -657,6 +570,119 @@ impl Blobmoji {
             Ok(_) => Ok(()),
             Err(err) => Err(err.into()),
         }
+    }
+
+    fn build_font(&self,
+                  emojis: &HashMap<&Emoji, Result<<Self as EmojiBuilder>::PreparedEmoji, <Self as EmojiBuilder>::Err>>,
+                  output_file: &Path,
+                  add_cmap_and_glyf: bool
+    ) {
+        // TODO: Build the font (the following steps are copied from the original Makefile
+        //       (cf. https://github.com/googlefonts/noto-emoji/blob/master/Makefile)
+        // (% is just used as a placeholder, just like in the Makefile)
+        // 1. (from the documentation: "[...] extends the cmap, hmtx, GSUB and GlyphOrder tabled
+        //     [...] apply aliases [...]"
+        //    python3 add_glyphs.py -f "%.ttx.tmpl" -o "%.ttx" -d "<PNG-dir>" -a emoji_aliases.txt
+        // 2. (Seems to use the TTX-tool to overwrite the old font)
+        //    rm -f %.ttf
+        //    ttx   %.ttx
+        // 3. ???? (we will not check sequences.
+        //    If this should be implemented, it will be at a much earlier point.)
+        //    (About that -5:
+        //     # flag for emoji builder.  Default to legacy small metrics for the time being.)
+        //    python3 third_party/color_emoji/emoji_builder.py -5 -V <name>.tmpl.ttf "<name>.ttf" "<PNG-dir>/emoji_u"
+        //    python3 map_pua_emoji.py "<name>.ttf" "<name>.ttf-with-pua"
+        //    // Is this step still necessary?
+        //    [python3] add_vs_cmap.py -vs 2640 2642 2695 --dstdir '.' -o "<name>.ttf-with-pua-varse1" "<name>.ttf-with-pua"
+        //    mv "<name>.ttf-with-pua-varse1" "<name>.ttf" ????
+        //    rm "<name>.ttf-with-pua"
+
+        // TODO: - Understand add_glyphs, find a workaround so we don't need to deal with files there
+        //       - Integrate TTX (to compile the .ttx to a .ttf)
+        //       - Understand what emoji_builder.py does
+        //       - Understand what map_pua_emoji does
+        //       - Check how and whether add_vs_cmap.py is actually needed here or if it needs to be
+        //         moved to an earlier step.
+        //       - Implement
+
+        // TODO: Handle errors
+        info!("Adding glyphs");
+        match noto_emoji_utils::add_glyphs(
+            &self.aliases,
+            &emojis,
+            self.build_path.join(TMPL_TTX_TMPL),
+            self.build_path.join(TMPL_TTX),
+            add_cmap_and_glyf
+        ) {
+            Ok(_) => (),
+            Err(err) => {
+                let gil = Python::acquire_gil();
+                let py = gil.python();
+                err.print(py);
+            }
+        };
+
+        let tmpl_ttf = self.build_path.join(TMPL_TTF);
+        // TODO: This if-condition might be unnecessary
+        if tmpl_ttf.exists() {
+            remove_file(tmpl_ttf).unwrap();
+        }
+
+        info!("Building TTF");
+        match noto_emoji_utils::build_ttf(&self.build_path) {
+            Ok(_) => (),
+            Err(err) => {
+                let gil = Python::acquire_gil();
+                let py = gil.python();
+                err.print(py);
+                panic!()
+            }
+        };
+
+        info!("Doing... something");
+        match noto_emoji_utils::emoji_builder(&self.build_path, add_cmap_and_glyf) {
+            Ok(_) => (),
+            Err(err) => {
+                let gil = Python::acquire_gil();
+                let py = gil.python();
+                err.print(py);
+                panic!()
+            }
+        };
+
+        info!("Mapping PUA");
+        match noto_emoji_utils::map_pua(&self.build_path) {
+            Ok(_) => (),
+            Err(err) => {
+                let gil = Python::acquire_gil();
+                let py = gil.python();
+                err.print(py);
+                panic!()
+            }
+        };
+
+        info!("Adding Version Selector");
+        match noto_emoji_utils::add_vs_cmap(&self.build_path) {
+            Ok(_) => (),
+            Err(err) => {
+                let gil = Python::acquire_gil();
+                let py = gil.python();
+                err.print(py);
+                panic!()
+            }
+        };
+
+        rename(
+            self.build_path.join(TTF_WITH_PUA_VARSE1),
+            self.build_path.join(TTF)
+        ).unwrap();
+
+        copy(self.build_path.join(TTF), output_file).unwrap();
+
+        remove_file(self.build_path.join(TTF_WITH_PUA)).unwrap();
+        remove_file(self.build_path.join(TMPL_TTX)).unwrap();
+        remove_file(self.build_path.join(TMPL_TTF)).unwrap();
+        remove_file(self.build_path.join(TTF)).unwrap();
     }
 }
 

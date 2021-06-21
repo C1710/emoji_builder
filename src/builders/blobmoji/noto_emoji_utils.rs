@@ -32,12 +32,14 @@ const ADD_ALIASES_PY: &str = include_str!("add_glyphs/add_aliases.py");
 const ADD_EMOJI_GSUB_PY: &str = include_str!("add_glyphs/add_emoji_gsub.py");
 
 pub fn add_glyphs(aliases: &Option<PathBuf>,
-              emojis: &HashMap<&Emoji, Result<
+                  emojis: &HashMap<&Emoji, Result<
                   <builders::blobmoji::Blobmoji as EmojiBuilder>::PreparedEmoji,
                   <builders::blobmoji::Blobmoji as EmojiBuilder>::Err>
               >,
-              ttx_tmpl: PathBuf,
-              ttx: PathBuf) -> PyResult<()> {
+                  ttx_tmpl: PathBuf,
+                  ttx: PathBuf,
+                  // From https://github.com/googlefonts/noto-emoji/blob/main/Makefile $(EMOJI_WINDOWS).tmpl.ttx: ...
+                  add_cmap4_and_glyf: bool) -> PyResult<()> {
     // seq_to_file: dir<codepoint sequence, file>
     //  cps = emoji.sequence (with strings instead of u32)
     //  seq = cps.filter(|cp| cp != fe0f)
@@ -104,12 +106,9 @@ pub fn add_glyphs(aliases: &Option<PathBuf>,
 
     let seq_to_file_dict = PyDict::from_sequence(py, seq_to_file.into_py(py))?;
 
-    let aliases = match aliases {
-        Some(aliases) => Some(add_glyphs_module.call1(
+    let aliases = aliases.map(|aliases| add_glyphs_module.call1(
             "apply_aliases", (seq_to_file_dict, aliases)
-        ).unwrap()),
-        None => None
-    };
+        ).unwrap());
 
     let ttx_module = PyModule::import(py, "fontTools.ttx")?;
 
@@ -141,7 +140,7 @@ pub fn add_glyphs(aliases: &Option<PathBuf>,
         lineheight
     };
 
-    add_glyphs_module.call1("update_font_data", (font, seq_to_advance, vadvance, aliases))?;
+    add_glyphs_module.call1("update_font_data", (font, seq_to_advance, vadvance, aliases, add_cmap4_and_glyf, add_cmap4_and_glyf))?;
 
     font.call_method1("saveXML", (ttx.to_string_lossy().into_owned(),))?;
 
@@ -163,7 +162,7 @@ pub fn build_ttf(build_path: &Path) -> PyResult<()>{
 const EMOJI_BUILDER_PY: &str = include_str!("color_emoji/emoji_builder.py");
 const PNG_PY: &str = include_str!("color_emoji/png.py");
 
-pub fn emoji_builder(build_path: &Path) -> PyResult<()> {
+pub fn emoji_builder(build_path: &Path, keep_outlines: bool) -> PyResult<()> {
     // TODO: We need access to that file. Embedding with include_str! is probably easier
     /*let emoji_builder_path: PathBuf =
         ["noto-emoji", "third_party", "color_emoji", "emoji_builder.py"]
@@ -183,7 +182,7 @@ pub fn emoji_builder(build_path: &Path) -> PyResult<()> {
         .to_string_lossy()
         .into_owned();
 
-    let argv = vec![
+    let mut argv = vec![
         "emoji_builder.py",
         "-S",
         "-V",
@@ -191,6 +190,9 @@ pub fn emoji_builder(build_path: &Path) -> PyResult<()> {
         &ttf,
         &png_dir
     ];
+    if keep_outlines {
+        argv.insert(2, "-O");
+    }
 
     let gil = Python::acquire_gil();
     let py = gil.python();
