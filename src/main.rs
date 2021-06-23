@@ -20,13 +20,15 @@ extern crate clap;
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate include_dir;
 
 use std::collections::HashMap;
 use std::fs;
 use std::iter::Iterator;
 use std::path::PathBuf;
 
-use clap::{App, ArgMatches};
+use clap::{App, ArgMatches, SubCommand, Arg};
 use rayon::prelude::*;
 use yaml_rust::Yaml;
 
@@ -35,7 +37,10 @@ use emoji_builder::builders::blobmoji::Blobmoji;
 use emoji_builder::emoji::Emoji;
 use emoji_builder::emoji_tables::EmojiTable;
 use std::fs::create_dir_all;
-use std::io::BufReader;
+use std::io::{BufReader, Write};
+use std::process::exit;
+
+const LICENSES: include_dir::Dir = include_dir!("licenses");
 
 fn main() {
     build::<Blobmoji>();
@@ -211,6 +216,19 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
     // As you can see above, &YAML really has the type &Yaml
     let app: App<'a, 'a> = App::from_yaml(&*YAML)
         .version(crate_version!())
+        .subcommand(SubCommand::with_name("licenses")
+            .arg(Arg::with_name("output_dir")
+                .help("The directory to copy the license files to")
+                .default_value("licenses")
+                .value_name("DIR")
+            )
+            .arg(Arg::with_name("print")
+                .help("Prints the files to stdout")
+                .takes_value(false)
+                .short("p")
+                .long("print")
+            )
+            .help("Extracts the license information for the used dependencies to the specified directory"))
         .subcommands(builder_args);
     let matches: ArgMatches = app
         .get_matches();
@@ -220,6 +238,48 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
         .modules(log_modules)
         .verbosity(matches.occurrences_of("verbose") as usize)
         .init().unwrap();
+
+    if let Some(matches) = matches.subcommand_matches("licenses") {
+        let print = matches.is_present("print");
+        if !print {
+            let output_dir = matches.value_of("output_dir").unwrap();
+            let output_dir = PathBuf::from(output_dir);
+            create_dir_all(&output_dir).unwrap();
+
+            recurse_included_dir(&LICENSES).iter()
+                .map(|file| ((&output_dir).join(file.path()), file.contents()))
+                .for_each(|(path, content)| {
+                    if let Some(parent) = path.parent() {
+                        create_dir_all(parent).unwrap_or_else(|err| error!("{:?}", err));
+                    }
+                    if !path.exists() {
+                        match std::fs::File::create(path) {
+                            Ok(mut file) => file.write_all(content).unwrap_or_else(|err| error!("{:?}", err)),
+                            Err(err) => error!("{:?}", err)
+                        }
+                    } else {
+                        info!("Not overwriting {:#?}", path);
+                    }
+                }
+                );
+        } else {
+            recurse_included_dir(&LICENSES).iter()
+                .map(|file| (file.path(), file.contents_utf8()))
+                .filter_map(|(path, content)| if let Some(content) = content {
+                    Some((path, content))
+                } else {
+                    warn!("Empty file: {:?}", path);
+                    None
+                })
+                .for_each(|(path, content)| {
+                    println!("{:?}:", path);
+                    println!("  {}", content.replace('\n', "\n  "));
+                })
+        }
+
+        exit(0);
+    }
+
 
     let images: PathBuf = matches.value_of("images").unwrap().into();
     let flags = matches.value_of("flags");
@@ -232,19 +292,13 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
 
     let no_sequences = matches.is_present("no_sequences");
 
-    let flags = match flags {
-        Some(flags) => Some(PathBuf::from(flags)),
-        None => None,
-    };
+    let flags = flags.map(PathBuf::from);
 
     let emoji_test = matches.value_of("emoji_test").map(PathBuf::from);
 
     let offline = matches.is_present("offline");
 
-    let tables = match tables {
-        Some(tables) => Some(PathBuf::from(tables)),
-        None => None,
-    };
+    let tables = tables.map(PathBuf::from);
 
     let subcommands: Vec<_> = names.iter()
         .map(|name| matches.subcommand_matches(name).cloned())
@@ -267,4 +321,14 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
         emoji_test,
         offline
     }
+}
+
+
+fn recurse_included_dir<'a>(dir: &'a include_dir::Dir) -> Vec<&'a include_dir::File<'a>> {
+    dir.files().iter()
+        .chain(dir.dirs().iter()
+            .map(|dir| recurse_included_dir(dir))
+            .flatten()
+        )
+        .collect()
 }
