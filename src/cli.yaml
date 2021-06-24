@@ -24,7 +24,9 @@ args:
   - verbose:
       short: v
       long: verbose
-      help: Prints additional information on the build process
+      multiple: true
+      help: Specify the verbosity level 
+      long_help: -v displays warnings, -vv displays additional information, -vvv debug information. Errors are always displayed
   - build:
       short: b
       long: build
@@ -45,3 +47,11 @@ args:
       value_name: DIR
       help: The directory containing the finished emoji set
       default_value: ./fonts
+  - no_sequences:
+      long: no-seqs
+      takes_value: false
+      help: Only consider single character emojis
+  - emoji_test:
+      long: emoji-test
+      value_name: FILE
+      help: A file that is formatted in the same way as the emoji-test.txt in https://unicode.org/Public/emoji/13.0/emoji-test.txt
