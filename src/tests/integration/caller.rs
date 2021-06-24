@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::builder::EmojiBuilder;
+use crate::builders::blobmoji::Blobmoji;
 use crate::changes::FileHashes;
 use crate::emoji::Emoji;
 use crate::emoji_tables::EmojiTable;
@@ -28,13 +29,13 @@ pub struct TestResult<T: EmojiBuilder> {
     build_path: PathBuf,
     output_path: PathBuf,
     result: Result<(), T::Err>,
-    emojis: Vec<Emoji>,
-    table: EmojiTable,
+    _emojis: Vec<Emoji>,
+    _table: EmojiTable,
 }
 
 fn prepare<'a, T: EmojiBuilder>(emojis: &'a [Emoji], builder: &T) -> HashMap<&'a Emoji, Result<T::PreparedEmoji, T::Err>> {
     emojis.iter()
-        .map(|emoji| (emoji, builder.prepare(emoji)))
+        .map(|emoji| (emoji, builder.prepare(emoji).map(|prepared| prepared.0)))
         .collect()
 }
 
@@ -43,7 +44,7 @@ fn build<T: EmojiBuilder>(emojis: HashMap<&Emoji, Result<T::PreparedEmoji, T::Er
 }
 
 fn create<T: EmojiBuilder>(build_path: PathBuf) -> T {
-    *T::new(build_path, true, None).unwrap()
+    *T::new(build_path, None).unwrap()
 }
 
 fn create_temps() -> (PathBuf, PathBuf) {
@@ -64,7 +65,7 @@ pub fn run<T: EmojiBuilder>(emojis: &[Emoji]) -> (PathBuf, PathBuf, Result<(), T
 }
 
 
-fn parse_emojis(emojis: &Path, flags: &Path, table: &Option<EmojiTable>) -> Vec<Emoji> {
+fn parse_emojis(emojis: &Path, flags: &Path, table: Option<&EmojiTable>) -> Vec<Emoji> {
     let emojis = emojis.read_dir().unwrap();
     let emojis = emojis
         .filter_map(|entry| entry.ok())
@@ -98,7 +99,7 @@ pub fn run_with_test_files<T: EmojiBuilder>() -> TestResult<T> {
     let emojis = parse_emojis(
         &PathBuf::from(TEST_EMOJIS),
         &PathBuf::from(TEST_FLAGS),
-        &table,
+        table.as_ref(),
     );
     let (build_path, output_path, result) = run::<T>(&emojis);
     let table = table.unwrap();
@@ -106,8 +107,8 @@ pub fn run_with_test_files<T: EmojiBuilder>() -> TestResult<T> {
         build_path,
         output_path,
         result,
-        emojis,
-        table,
+        _emojis: emojis,
+        _table: table,
     }
 }
 
@@ -123,6 +124,16 @@ fn test_dummy() {
     assert!(result.output_path.exists());
     // And it should contain the correct hashes
     check_hashes(&result.output_path, &PathBuf::from(TEST_HASHES));
+}
+
+#[test]
+fn test_blobmoji() {
+    let result = run_with_test_files::<Blobmoji>();
+    // First of all, have there been any errors?
+    assert!(result.result.is_ok(),
+            "An error has occured:\n\t{:?}", result.result.unwrap_err());
+    // And there should be an output file...
+    assert!(result.output_path.exists());
 }
 
 fn check_hashes(actual: &Path, expected: &Path) {

@@ -31,7 +31,7 @@ fn test_hashing() {
 
     // Check that it is *really* empty
     assert!(empty_hashes.is_empty());
-    let emoji = Emoji::from_path(PathBuf::from(SVG_FILE), &None, false).unwrap();
+    let emoji = Emoji::from_path(PathBuf::from(SVG_FILE), None, false).unwrap();
     assert!(!empty_hashes.check(&emoji).unwrap());
 
     let hash = FileHashes::hash(&emoji).unwrap();

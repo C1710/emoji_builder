@@ -1,21 +1,21 @@
 This directory contains all the license files provided by the crates used in this project.
-The directories are named just like the crates with their respective version.
+The directories are named just like the crates.
 The folder structure has been preserved (if possible).
 However, some authors did not specify any license file and copyright notice.
-In these cases the license file has been added according to the Cargo.toml-file with an additional file containing the authors names and e-mail addresses (also according to the Cargo.toml-file)
+These licenses (as well as the others) are listed here (according to the output of cargo-license):
 
-If there is more than one license provided for one crate, the license has been chosen as follows
-(higher means it is preferred, so for example the MIT license is preferred over the FTL license)
-
-Unlicense
-MIT
-Apache 2.0
-BSD-2-clause
-BSD-3-clause
-Fuchsia license*
-FTL
-Zlib
-ISC
-MPL-2.0
-
-*This license does not seem to have a name and is only used for fuchsia-cprng
+0BSD OR Apache-2.0 OR MIT (1): adler
+Apache-2.0 (10): approx, emoji_builder, libdeflate-sys, libdeflater, openssl, pyo3, pyo3-macros, pyo3-macros-backend, unicode-general-category, zopfli
+Apache-2.0 AND Zlib OR MIT AND Zlib (2): cloudflare-zlib, cloudflare-zlib-sys
+Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT (2): wasi, wasi
+Apache-2.0 OR BSL-1.0 (1): ryu
+Apache-2.0 OR MIT (189): arrayvec, autocfg, autocfg, base64, bit-vec, bitflags, block-buffer, block-padding, bstr, bumpalo, byte-tools, bytecount, cc, cfg-if, cfg-if, chrono, console_error_panic_hook, const_fn, core-foundation, core-foundation-sys, crc, crc32fast, crossbeam-channel, crossbeam-deque, crossbeam-epoch, crossbeam-utils, ctor, data-url, deflate, digest, either, encoding_rs, fake-simd, flate2, fnv, foreign-types, foreign-types-shared, form_urlencoded, futures, futures-channel, futures-core, futures-executor, futures-io, futures-macro, futures-sink, futures-task, futures-util, getrandom, ghost, hashbrown, hermit-abi, hex, http, httparse, httpdate, hyper-tls, idna, indexmap, indoc, indoc-impl, inventory, inventory-impl, iovec, ipnet, itertools, itertools, itoa, jpeg-decoder, js-sys, kurbo, lazy_static, lazy_static, libc, lock_api, log, memmap2, memmap2, mime, miow, native-tls, net2, num-integer, num-iter, num-rational, num-traits, num_cpus, numtoa, once_cell, opaque-debug, openssl-probe, palette, palette_derive, parking_lot, parking_lot_core, paste, paste-impl, percent-encoding, pin-project, pin-project, pin-project-internal, pin-project-internal, pin-project-lite, pin-project-lite, pin-utils, pkg-config, png, ppv-lite86, proc-macro-hack, proc-macro-nested, proc-macro2, quote, rand, rand, rand_chacha, rand_chacha, rand_core, rand_core, rand_core, rand_hc, rand_hc, rand_isaac, rand_jitter, rand_os, rand_pcg, rand_pcg, rand_xorshift, rayon, rayon-core, regex, regex-syntax, remove_dir_all, reqwest, roxmltree, rustc_version, scoped-tls, scopeguard, security-framework, security-framework-sys, semver, semver-parser, serde, serde_derive, serde_json, serde_urlencoded, sha2, simplecss, siphasher, siphasher, smallvec, socket2, stderrlog, svgtypes, syn, tempfile, thread_local, thread_local, time, ttf-parser, ttf-parser, typenum, unicase, unicode-bidi, unicode-bidi-mirroring, unicode-ccc, unicode-normalization, unicode-script, unicode-vo, unicode-width, unicode-xid, unindent, unreachable, url, vcpkg, vec_map, version_check, wasm-bindgen, wasm-bindgen-backend, wasm-bindgen-futures, wasm-bindgen-macro, wasm-bindgen-macro-support, wasm-bindgen-shared, wasm-bindgen-test, wasm-bindgen-test-macro, web-sys, winapi, winapi-i686-pc-windows-gnu, winapi-x86_64-pc-windows-gnu, xmlparser, yaml-rust
+Apache-2.0 OR MIT OR Zlib (5): bytemuck, miniz_oxide, safe_arch, tinyvec, tinyvec_macros
+BSD-2-Clause (2): arrayref, cloudabi
+BSD-3-Clause (4): fuchsia-zircon, fuchsia-zircon-sys, instant, tiny-skia
+ISC (1): rdrand
+MIT (53): ansi_term, atty, build_const, bytes, clap, color_quant, float-cmp, fontdb, generic-array, gimp_palette, h2, http-body, hyper, image, kernel32-sys, matches, memoffset, mime_guess, miniz_oxide, mio, openssl-sys, oxipng, phf, phf_codegen, phf_generator, phf_shared, pico-args, rctree, redox_syscall, redox_termios, rgb, rustybuzz, schannel, slab, strsim, termion, textwrap, tokio, tokio-tls, tokio-util, tower-service, tracing, tracing-core, tracing-futures, try-lock, typed-arena, void, want, winapi, winapi-build, winreg, ws2_32-sys, xmlwriter
+MIT OR Unlicense (8): aho-corasick, byteorder, csv, csv-core, memchr, regex-automata, termcolor, winapi-util
+MPL-2.0 (3): resvg, svgfilters, usvg
+N/A (1): fuchsia-cprng
+Zlib (1): adler32
