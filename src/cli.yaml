@@ -55,7 +55,3 @@ args:
       long: emoji-test
       value_name: FILE
       help: A file that is formatted in the same way as the emoji-test.txt in https://unicode.org/Public/emoji/13.0/emoji-test.txt
-  - offline:
-      long: offline
-      takes_value: false
-      help: Disable the inclusion of online emoji tables

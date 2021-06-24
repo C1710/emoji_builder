@@ -122,13 +122,15 @@ fn parse_emojis(args: &BuilderArguments) -> Vec<Emoji> {
         table
     };
 
-    let table = if cfg!(feature = "online") && !args.offline {
+    #[cfg(feature = "online")]
+    let table = if !args.offline {
         let mut table = table.unwrap_or_default();
         table.expand_all_online((13, 0)).unwrap_or_else(|e| warn!("Couldn't load online emoji tables: {:?}", e));
         Some(table)
     } else {
         table
     };
+
 
     if table.is_some() {
         info!("Using emoji table");
@@ -205,6 +207,7 @@ struct BuilderArguments<'a> {
     builder_matches: HashMap<String, Option<ArgMatches<'a>>>,
     no_sequences: bool,
     emoji_test: Option<PathBuf>,
+    #[cfg(feature = "online")]
     offline: bool
 }
 
@@ -218,7 +221,7 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
         .flatten();
     // IntelliJ thinks this is an error, but it isn't.
     // As you can see above, &YAML really has the type &Yaml
-    let app: App<'a, 'a> = App::from_yaml(&*YAML)
+    let mut app: App<'a, 'a> = App::from_yaml(&*YAML)
         .version(crate_version!())
         .subcommand(SubCommand::with_name("licenses")
             .arg(Arg::with_name("output_dir")
@@ -234,6 +237,15 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
             )
             .help("Extracts the license information for the used dependencies to the specified directory"))
         .subcommands(builder_args);
+
+    if cfg!(feature = "online") {
+        app = app.arg(Arg::with_name("offline")
+            .long("offline")
+            .takes_value(false)
+            .help("Disable the inclusion of online emoji tables")
+        );
+    }
+
     let matches: ArgMatches = app
         .get_matches();
 
@@ -300,6 +312,7 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
 
     let emoji_test = matches.value_of("emoji_test").map(PathBuf::from);
 
+    #[cfg(feature = "online")]
     let offline = matches.is_present("offline");
 
     let tables = tables.map(PathBuf::from);
@@ -323,6 +336,7 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
         builder_matches,
         no_sequences,
         emoji_test,
+        #[cfg(feature = "online")]
         offline
     }
 }

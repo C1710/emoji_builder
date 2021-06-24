@@ -21,7 +21,7 @@
 use std::collections::hash_map::RandomState;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{BufRead, BufReader, Cursor, Error};
+use std::io::{BufRead, BufReader, Error};
 use std::path::Path;
 use std::str::FromStr;
 
@@ -421,11 +421,17 @@ impl EmojiTable {
         Ok(())
     }
 
+    #[cfg(feature = "online")]
     const EMOJI_DATA: &'static str = "emoji-data.txt";
+    #[cfg(feature = "online")]
     const EMOJI_SEQUENCES: &'static str = "emoji-sequences.txt";
+    #[cfg(feature = "online")]
     const EMOJI_ZWJ_SEQUENCES: &'static str = "emoji-zwj-sequences.txt";
+    #[cfg(feature = "online")]
     const EMOJI_VARIATION_SEQUENCES: &'static str = "emoji-variation-sequences.txt";
+    #[cfg(feature = "online")]
     const EMOJI_TEST: &'static str = "emoji-test.txt";
+    #[cfg(feature = "online")]
     const DATA_FILES: [&'static str; 3] = [
         Self::EMOJI_DATA,
         Self::EMOJI_SEQUENCES,
@@ -483,10 +489,10 @@ impl EmojiTable {
 
     #[cfg(feature = "online")]
     #[inline]
-    fn get_data_file_online(client: &reqwest::blocking::Client, version: (u32, u32), file: &'static str) -> Result<Cursor<bytes::Bytes>, reqwest::Error> {
+    fn get_data_file_online(client: &reqwest::blocking::Client, version: (u32, u32), file: &'static str) -> Result<std::io::Cursor<bytes::Bytes>, reqwest::Error> {
         let request = client.get(&Self::build_url(version, file)).send();
         let bytes = request?.bytes()?;
-        Ok(Cursor::new(bytes))
+        Ok(std::io::Cursor::new(bytes))
     }
 
     #[cfg(feature = "online")]
@@ -496,6 +502,7 @@ impl EmojiTable {
     }
 
     /// A simple helper function to build the URLs for the different files.
+    #[cfg(feature = "online")]
     #[inline]
     fn build_url(version: (u32, u32), file: &'static str) -> String {
         if version.0 >= 13 && [Self::EMOJI_DATA, Self::EMOJI_VARIATION_SEQUENCES].contains(&file) {
