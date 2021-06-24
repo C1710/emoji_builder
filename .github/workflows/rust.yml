@@ -38,4 +38,5 @@ jobs:
         # A requirements file to install from
         requirements: requirements.txt
     - name: Run tests
-      run: cargo test --verbose
+      # We can't access online content
+      run: cargo test --verbose --no-default-features
