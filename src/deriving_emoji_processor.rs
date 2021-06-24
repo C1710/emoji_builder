@@ -17,6 +17,10 @@
 use crate::emoji_processor::EmojiProcessor;
 use crate::emoji::Emoji;
 
+// TODO: Enforce documentation
+
+// Implementation is not ready at the moment anyway
+#[allow(missing_docs)]
 pub trait DerivingEmojiProcessor<T>: Send + Sync + EmojiProcessor<T> {
     type DerivationTag: Clone + Send + Sync;
     /// Returns a list of the emojis this processor can derive from the given emoji
@@ -26,6 +30,9 @@ pub trait DerivingEmojiProcessor<T>: Send + Sync + EmojiProcessor<T> {
     fn derive(&self, derivations: DerivedEmojis<Self::DerivationTag>, prepared: T) -> Vec<(Emoji, T)>;
 }
 
+
+// Implementation is not ready at the moment anyway
+#[allow(missing_docs)]
 pub struct DerivedEmojis<T> where T: Clone + Send + Sync {
     pub base: Emoji,
     pub derived: Vec<(Emoji, T)>

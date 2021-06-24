@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+//! This software is intended to build emoji fonts from SVG files in different formats.
+//! It can use/extract metadata information from Unicode(R) Data files like the ones found at
+//! <https://unicode.org/Public/emoji/13.0> and validate against it.
+
 #[macro_use]
 extern crate clap;
 #[macro_use]

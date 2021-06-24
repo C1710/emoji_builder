@@ -39,6 +39,7 @@ use crate::changes;
 pub struct FileHashes(HashMap<Vec<u32>, Vec<u8>>);
 
 #[derive(Debug)]
+/// An error that can occur with change checking
 pub enum CheckError {
     /// An error that happened in the IO part
     Io(std::io::Error),
@@ -176,18 +177,22 @@ impl FileHashes {
         Ok(())
     }
 
+    /// If a changelist is empty
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
+    /// The length of a changelist
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// Checks whether an emoji occurs in a changelist
     pub fn contains<E: AsRef<[u32]>>(&self, emoji: E) -> bool {
         self.0.contains_key(emoji.as_ref())
     }
 
+    /// Create a new, empty changelist
     pub fn new() -> FileHashes {
         Self::default()
     }

@@ -28,10 +28,12 @@ use usvg::NodeKind::{LinearGradient, Path, RadialGradient};
 use crate::emoji::Emoji;
 use crate::emoji_processor::EmojiProcessor;
 
+/// Stores the configuration (that is, the palette) for a color-reducing/aligning emoji processor
 pub struct ReduceColors {
     palette: Vec<Lab>
 }
 
+/// Wrapper for [gimp_palette::NewPaletteError]
 pub struct PaletteError(gimp_palette::NewPaletteError);
 
 impl EmojiProcessor<usvg::Tree> for ReduceColors {

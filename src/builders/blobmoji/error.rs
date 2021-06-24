@@ -26,11 +26,16 @@ pub enum BlobmojiError {
     /// later on.
     EmojiInvalidated,
     // TODO: Get rid of this error
+    /// An error with unknown/undefined origin
     UnknownError,
+    /// Wrapper for [std::io::Error]
     IoError(std::io::Error),
+    /// Wrapper for multiple [std::io::Error]s
     IoErrors(Vec<std::io::Error>),
+    /// Wrapper for [csv::Error]
     CsvError(csv::Error),
     // Unfortunately, PyErr requires additional stuff to be actually helpful
+    /// Wrapper for an error that occured in Python code
     PythonError(String)
 }
 

@@ -24,6 +24,8 @@ use clap::{App, ArgMatches};
 use crate::builder::ResetError::IoError;
 use crate::emoji::Emoji;
 
+/// Represents (if [core::result::Result::Ok]) a prepared emoji and possibly derived, prepared emojis
+/// (The latter one isn't used yet)
 pub type PreparationResult<Prepared, Err> = Result<(Prepared, Option<Vec<(Emoji, Prepared)>>), Err>;
 
 /// A trait that allows custom build routines for emoji sets.
@@ -31,7 +33,9 @@ pub type PreparationResult<Prepared, Err> = Result<(Prepared, Option<Vec<(Emoji,
 /// Usually an `EmojiBuilder` will build an emoji font in one (or more) specific format(s), but
 /// it might be used in other contexts as well.
 pub trait EmojiBuilder: Send + Sync {
+    /// An error type for anything that can go wrong with this `EmojiBuilder`
     type Err: Debug + Send + Sync;
+    /// An emoji that has been prepared and can then be used in the building process
     type PreparedEmoji: Send + Sync;
 
     /// Initializes a new `EmojiBuilder` before using it.
@@ -131,9 +135,13 @@ pub trait EmojiBuilder: Send + Sync {
     }
 }
 
+/// An error wrapper that can additionally output IO errors
 pub enum ResetError<T> {
+    /// Wrapper for a single [std::io::Error]
     IoError(std::io::Error),
+    /// Wrapper for a "normal" [crate::builder::EmojiBuilder::Err]
     BuilderError(T),
+    /// Wrapper for multiple [std::io::Error]s
     IoErrors(Vec<std::io::Error>)
 }
 

@@ -26,6 +26,7 @@ use crate::emoji::Emoji;
 /// for different builders.
 /// NOTICE: This trait is anything but ready! Anything might change at any time
 pub trait EmojiProcessor<T>: Send + Sync {
+    /// Any error that can occur while processing an emoji
     type Err: Debug + Send + Sync;
 
     /// Initializes a new `PostProcessor` before using it.

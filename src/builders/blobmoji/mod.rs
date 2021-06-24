@@ -48,11 +48,13 @@ use crate::emoji_processors::reduce_colors::ReduceColors;
 use crate::builders::blobmoji::error::BlobmojiError;
 
 mod waveflag;
+/// The error type that can occur for the [Blobmoji] builder
 pub mod error;
 mod image_utils;
 mod noto_emoji_utils;
 
 #[allow(dead_code)]
+/// Represents the configuration for the `Blobmoji` builder
 pub struct Blobmoji {
     build_path: PathBuf,
     hashes: FileHashes,

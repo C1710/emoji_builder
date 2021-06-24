@@ -13,4 +13,5 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+/// A processor that reduces/aligns the colors of an emoji to a fixed color palette
 pub mod reduce_colors;

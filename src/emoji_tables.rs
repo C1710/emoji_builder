@@ -40,7 +40,7 @@ const EMOJI_STATUS_REGEX: &str = r"(component|fully-qualified|minimally-qualifie
 const EMOJI_NAME_REGEX: &str = r"(.*)?\s*E(\d+.\d+) (.+)";
 
 /// An internal representation of one or more Unicode® emoji data tables
-/// https://unicode.org/Public/emoji/12.0/
+/// <https://unicode.org/Public/emoji/12.0/>
 /// It maps emoji code sequences to their kind and (if given) a description/name.
 #[derive(Debug)]
 #[derive(PartialEq)]
@@ -54,7 +54,7 @@ impl EmojiTable {
     }
 
     /// Reads multiple files which are formatted in the same way as the Unicode® emoji data tables
-    /// (See https://unicode.org/Public/emoji/12.0/) and builds a lookup table
+    /// (See <https://unicode.org/Public/emoji/12.0/>) and builds a lookup table
     /// to gather additional metadata for emojis.
     ///
     /// If an emoji sequence (in this case an entry with more than one codepoints) contains the VS-16
@@ -94,6 +94,10 @@ impl EmojiTable {
         Ok(table)
     }
 
+    /// Expands the table with the contents of an emoji table-file with  the syntax of e.g.
+    /// `emoji-data.txt`.
+    /// Only the emoji itself and its kind(s) is/are extended.
+    /// Names are extended from `emoji-test.txt`-like files, using [EmojiTable::expand_descriptions_from_test_data]
     pub fn expand<I: BufRead>(&mut self, reader: I) -> Result<(), Error> {
         lazy_static! {
             static ref HEX_SEQUENCE: Regex = Regex::new(r"[a-fA-F0-9]{1,8}").unwrap();
@@ -302,6 +306,7 @@ impl EmojiTable {
         self.1.insert(lookup_name, key)
     }
 
+    /// Returns the table entry for a given key
     pub fn get<T: AsRef<EmojiTableKey>>(&self, index: &T) -> Option<&EmojiTableEntry> {
         let index: &EmojiTableKey = index.as_ref();
         self.0.get(index)
@@ -336,11 +341,7 @@ impl EmojiTable {
         } else {
             let lookup_name = Self::normalize_lookup_name(name);
             if let Some(codepoint) = self.1.get(&lookup_name) {
-                if let Some(entry) = self.0.get(codepoint) {
-                    Some((codepoint.clone(), entry))
-                } else {
-                    None
-                }
+                self.0.get(codepoint).map(|entry| (codepoint.clone(), entry))
             } else {
                 None
             }
@@ -364,10 +365,12 @@ impl EmojiTable {
         (&*DELIMITERS as &Regex).split(&REMOVED.replace_all(name, "")).join(" ").to_lowercase()
     }
 
+    /// Returns the size of the table
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// Checks whether the table is empty
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -376,7 +379,7 @@ impl EmojiTable {
     /// Uses the names of the emoji-test.txt files.
     /// These seem to be more suitable than emoji-data.txt as they don't include any emoji character
     /// ranges.
-    /// An example would be https://unicode.org/Public/emoji/13.0/emoji-test.txt.
+    /// An example would be <https://unicode.org/Public/emoji/13.0/emoji-test.txt>.
     ///
     /// _Please note that this parser is extremely **strict** and will crash if something is wrong
     /// with the syntax_
@@ -391,29 +394,27 @@ impl EmojiTable {
                                                EMOJI_NAME_REGEX)
             ).unwrap();
         };
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                let line = line.trim();
-                // Only check if it's not a comment/empty line
-                if !line.starts_with('#') & !line.is_empty() {
-                    // Try to match the line
-                    if let Some(captures) = (&*EMOJI_TEST_REGEX as &Regex).captures(line) {
-                        // Extract information
-                        let codepoints: Vec<_> = Self::get_codepoint_sequence(captures.get(1).unwrap().as_str());
-                        let status = captures.get(5).unwrap().as_str();
-                        let _emoji = captures.get(6);
-                        let _version = captures.get(7).unwrap();
-                        let name = captures.get(8).unwrap().as_str();
+        for line in reader.lines().flatten() {
+            let line = line.trim();
+            // Only check if it's not a comment/empty line
+            if !line.starts_with('#') & !line.is_empty() {
+                // Try to match the line
+                if let Some(captures) = (&*EMOJI_TEST_REGEX as &Regex).captures(line) {
+                    // Extract information
+                    let codepoints: Vec<_> = Self::get_codepoint_sequence(captures.get(1).unwrap().as_str());
+                    let status = captures.get(5).unwrap().as_str();
+                    let _emoji = captures.get(6);
+                    let _version = captures.get(7).unwrap();
+                    let name = captures.get(8).unwrap().as_str();
 
-                        self.update_emoji(codepoints.clone(), None, Some(name));
+                    self.update_emoji(codepoints.clone(), None, Some(name));
 
-                        // Don't insert unqualified codepoints unless we don't have a mapping for this name anyway
-                        if status != "unqualified" || self.get_by_name(&name).is_none() {
-                            self.insert_lookup_name(&name, codepoints.clone());
-                        }
-                    } else {
-                        warn!("Malformed line in emoji-test.txt: {}", line);
+                    // Don't insert unqualified codepoints unless we don't have a mapping for this name anyway
+                    if status != "unqualified" || self.get_by_name(&name).is_none() {
+                        self.insert_lookup_name(&name, codepoints.clone());
                     }
+                } else {
+                    warn!("Malformed line in emoji-test.txt: {}", line);
                 }
             }
         };
@@ -586,10 +587,7 @@ impl From<HashMap<EmojiTableKey, EmojiTableEntry>> for EmojiTable {
     fn from(table: HashMap<Vec<u32>, (Vec<EmojiKind>, Option<String>), RandomState>) -> Self {
         let names_map: HashMap<String, EmojiTableKey> = table
             .iter()
-            .filter_map(|(codepoint, (_, name))| match name {
-                Some(name) => Some((name.clone(), codepoint.clone())),
-                None => None
-            })
+            .filter_map(|(codepoint, (_, name))| name.as_ref().map(|name| (name.clone(), codepoint.clone())))
             .collect();
         EmojiTable(table, names_map)
     }
@@ -610,21 +608,31 @@ impl AsRef<HashMap<EmojiTableKey, EmojiTableEntry>> for EmojiTable {
 /// A representation of errors encountered while parsing or using emoji tables.
 #[derive(Debug)]
 pub enum EmojiTableError {
+    /// Indicates that an emoji with the given sequence is not in the table
     KeyNotFound(EmojiTableKey),
 }
 
+/// The status of an emoji according to `emoji-test.txt` (currently not used
 pub enum _EmojiTestStatus {
+    /// ? TODO: Find out, what this is
     Component,
+    /// It is a regular, RGI emoji
     FullyQualified,
+    /// ? TODO: Find out, what this is
     MinimallyQualified,
+    /// Not actually displayed as an emoji/not RGI
     Unqualified,
 }
 
 #[derive(Debug)]
+/// An error that occurs while expanding an [EmojiTable]
 pub enum ExpansionError {
+    /// Wrapper for [std::io::Error]
     Io(std::io::Error),
+    /// Wrapper for multiple errors
     Multiple(Vec<ExpansionError>),
     #[cfg(feature = "online")]
+    /// Wrappter for [reqwest::Error]
     Reqwest(reqwest::Error),
 }
 

@@ -53,15 +53,25 @@ pub struct Emoji {
 /// An internal representation for the different emoji types represented in the Unicode® Tables
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum EmojiKind {
+    /// A regular emoji
     Emoji,
+    /// An ZWJ-sequence (a sequence containing `U+200D`)
     EmojiZwjSequence,
+    /// A sequence of multiple characters
     EmojiSequence,
+    /// Something that can be displayed as an emoji
     EmojiPresentation,
+    /// Something that can be combined with a modifier
     ModifierBase,
+    /// ???
     EmojiComponent,
+    /// A sequence including the keycap character (no idea, why it exists)
     EmojiKeycapSequence,
+    /// A flag
     EmojiFlagSequence,
+    /// An emoji with a modifier (e.g. skin tone)
     EmojiModifierSequence,
+    /// Something else, that is not mapped here
     Other(String),
 }
 
@@ -612,6 +622,17 @@ impl Emoji {
                 Self::REGION_DIGITS.contains(codepoint))
     }
 
+    /// Returns the emoji itself
+    /// ## Example
+    /// ```
+    ///
+    /// use emoji_builder::emoji::Emoji;
+    ///
+    /// // Face with heart eyes
+    /// let emoji = Emoji::from_u32_sequence(vec![0x1f60d], None).unwrap();
+    ///
+    /// assert_eq!(String::from("😍"), emoji.display_emoji());
+    /// ```
     pub fn display_emoji(&self) -> String {
         self.sequence.iter().filter_map(|codepoint| char::from_u32(*codepoint))
             .collect()
@@ -716,6 +737,7 @@ impl FromStr for EmojiKind {
 pub struct UnknownEmojiKind(EmojiKind);
 
 impl UnknownEmojiKind {
+    /// Returns the unknown emoji kind (which will be of the type [EmojiKind::Other])
     pub fn get(self) -> EmojiKind {
         self.0
     }
@@ -810,6 +832,7 @@ impl Ord for EmojiKind {
 }
 
 #[derive(Debug)]
+/// An error that can occur while creating an [Emoji]
 pub enum EmojiError {
     /// Indicates that either no codepoint sequence has been parsed or that a string didn't
     /// match the recognized patterns for codepoint sequences or that the given table does not contain
