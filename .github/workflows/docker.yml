@@ -36,6 +36,7 @@ jobs:
           tags: |
             type=ref,event=tag
             type=sha
+            latest
       - name: Push to GitHub Packages
         uses: docker/build-push-action@v2
         with:
