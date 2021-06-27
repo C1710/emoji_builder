@@ -45,6 +45,7 @@ const EMOJI_NAME_REGEX: &str = r"(.*)?\s*E(\d+.\d+) (.+)";
 #[derive(Debug)]
 #[derive(PartialEq)]
 #[derive(Eq)]
+#[derive(Clone)]
 pub struct EmojiTable(HashMap<EmojiTableKey, EmojiTableEntry>, HashMap<String, EmojiTableKey>);
 
 impl EmojiTable {
@@ -581,6 +582,16 @@ impl EmojiTable {
             },
             additional
         )
+    }
+
+    pub fn extend(&mut self, other: EmojiTable) {
+        self.0.extend(other.0.into_iter());
+        self.1.extend(other.1.into_iter());
+    }
+
+    pub fn extend_preserve_own(&mut self, other: EmojiTable) {
+        self.0 = other.0.into_iter().chain(self.0.drain().into_iter()).collect();
+        self.1 = other.1.into_iter().chain(self.1.drain().into_iter()).collect();
     }
 }
 

@@ -637,6 +637,13 @@ impl Emoji {
         self.sequence.iter().filter_map(|codepoint| char::from_u32(*codepoint))
             .collect()
     }
+    
+    pub fn alias(&self, alias_sequence: Vec<u32>) -> Self {
+        Self {
+            sequence: alias_sequence,
+            ..self.clone()
+        }
+    }
 }
 
 impl From<&[u32]> for Emoji {
@@ -696,6 +703,18 @@ impl PartialEq<[u32]> for Emoji {
 impl PartialEq<Emoji> for [u32] {
     fn eq(&self, other: &Emoji) -> bool {
         other.sequence == self
+    }
+}
+
+impl PartialOrd for Emoji {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.sequence.partial_cmp(&other.sequence)
+    }
+}
+
+impl Ord for Emoji {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.sequence.cmp(&other.sequence)
     }
 }
 
