@@ -155,7 +155,7 @@ impl EmojiPackFile {
                 .collect();
             Ok(aliases)
         } else {
-            Err((HashMap::new(), LoadingError::MissingParameter.into()))
+            Err((HashMap::new(), LoadingError::MissingParameter))
         }
     }
 

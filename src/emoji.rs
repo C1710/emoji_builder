@@ -333,7 +333,7 @@ impl Emoji {
 
     fn from_name(name: &str, table: &EmojiTable) -> Result<Emoji, EmojiError> {
         match table.get_by_name(name) {
-            Some((sequence, (kinds, _))) => Ok(Emoji {
+            Some((sequence, (kinds, _, _))) => Ok(Emoji {
                 sequence,
                 name: Some(name.to_string()),
                 kinds: Some(kinds.clone()),
@@ -350,13 +350,14 @@ impl Emoji {
     /// use std::collections::HashMap;
     /// use emoji_builder::emoji::{EmojiKind, Emoji};
     /// use emoji_builder::emoji_tables::EmojiTable;
+    /// use emoji_builder::emoji_tables::EmojiStatus;
     ///
     /// let mut table = EmojiTable::new();
     /// let sequence = vec![0x1f914];
     /// let kind = vec![EmojiKind::Emoji];
     /// let name = String::from("Thinking Face");
     ///
-    /// table.insert(sequence.clone(), (kind.clone(), Some(name.clone())));
+    /// table.insert(sequence.clone(), (kind.clone(), Some(name.clone()), Some(EmojiStatus::FullyQualified)));
     ///
     /// let mut emoji = Emoji::from(sequence.clone());
     /// emoji.set_kind(&table);
@@ -371,7 +372,7 @@ impl Emoji {
     pub fn set_kind(&mut self, table: &EmojiTable) -> Result<(), EmojiTableError> {
         let seq = &self.sequence;
         match &table.get(seq) {
-            Some((kind, _)) => {
+            Some((kind, _, _)) => {
                 self.kinds = Some(kind.clone());
                 Ok(())
             }
@@ -500,7 +501,7 @@ impl Emoji {
     pub fn set_name(&mut self, table: &EmojiTable) -> Result<(), EmojiTableError> {
         let seq = &self.sequence;
         match &table.get(seq) {
-            Some((_, name)) => {
+            Some((_, name, _)) => {
                 self.name = name.clone();
                 Ok(())
             }

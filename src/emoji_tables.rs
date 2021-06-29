@@ -32,10 +32,11 @@ use crate::emoji::{EmojiKind, Emoji};
 #[cfg(feature = "online")]
 use std::sync::RwLock;
 
+
 /// A code sequence
 type EmojiTableKey = Vec<u32>;
 // The EmojiKinds and optionally a description/name
-type EmojiTableEntry = (Vec<EmojiKind>, Option<String>);
+type EmojiTableEntry = (Vec<EmojiKind>, Option<String>, Option<EmojiStatus>);
 
 const EMOJI_SEQUENCE_SPACE_REGEX: &str = r"(([A-F0-9a-f]{1,8})(\s+([A-F0-9a-f]{1,8}))*)";
 const EMOJI_STATUS_REGEX: &str = r"(component|fully-qualified|minimally-qualified|unqualified)";
@@ -129,7 +130,10 @@ impl EmojiTable {
                         let end = captures.name("range_end").unwrap().as_str();
                         self.update_range(start, end, Some(kind));
                     } else if let Some(sequence) = captures.name("sequence") {
-                        self.update_emoji(Self::get_codepoint_sequence(sequence.as_str()), Some(kind), None);
+                        self.update_emoji(Self::get_codepoint_sequence(sequence.as_str()),
+                                          Some(kind),
+                                          None,
+                                          None);
                     } else {
                         unreachable!("Either a range or a sequence has to be captured");
                     }
@@ -178,7 +182,7 @@ impl EmojiTable {
 
     fn _get_description(&self, sequence: &[u32]) -> Option<String> {
         match self.0.get(sequence) {
-            Some((_, description)) => description.clone(),
+            Some((_, description, _)) => description.clone(),
             None => None,
         }
     }
@@ -195,7 +199,7 @@ impl EmojiTable {
         let start = u32::from_str_radix(start, 16).unwrap();
         let end = u32::from_str_radix(end, 16).unwrap();
         for codepoint in start..=end {
-            self.update_emoji(vec![codepoint], kind.clone(), None);
+            self.update_emoji(vec![codepoint], kind.clone(), None, None);
         }
     }
 
@@ -207,30 +211,20 @@ impl EmojiTable {
     fn update_emoji(&mut self,
                     emoji: EmojiTableKey,
                     kind: Option<EmojiKind>,
-                    description: Option<&str>
+                    description: Option<&str>,
+                    status: Option<EmojiStatus>
     ) {
-        // If it contains FE0F, we'll also add it without it
-        // TODO: Maybe drop this behavior?
-        if emoji.contains(&0xfe0f) {
-            self.update_emoji(
-                emoji.iter().filter_map(|codepoint| if *codepoint != 0xfe0f {
-                    Some(*codepoint)
-                } else {
-                    None
-                }).collect(),
-                kind.clone(),
-                description
-            )
-        }
         let existing_entry = self.0.get_mut(&emoji);
-        if let Some((kinds, existing_description)) = existing_entry {
+        if let Some((kinds, existing_description, existing_status)) = existing_entry {
             Self::add_kind(kinds, kind);
             Self::update_description(existing_description, description);
+            *existing_status = status.or(*existing_status)
         } else {
             let entry = (
                 // We expect that at some point the emoji will have at least one kind
                 kind.map(|kind| vec![kind]).unwrap_or_else(|| Vec::with_capacity(1)),
-                description.map(|descr| descr.to_owned())
+                description.map(|descr| descr.to_owned()),
+                status
             );
             self.0.insert(emoji, entry);
         }
@@ -406,14 +400,15 @@ impl EmojiTable {
                     // Extract information
                     let codepoints: Vec<_> = Self::get_codepoint_sequence(captures.get(1).unwrap().as_str());
                     let status = captures.get(5).unwrap().as_str();
+                    let status = EmojiStatus::from_str(status);
                     let _emoji = captures.get(6);
                     let _version = captures.get(7).unwrap();
                     let name = captures.get(8).unwrap().as_str();
 
-                    self.update_emoji(codepoints.clone(), None, Some(name));
+                    self.update_emoji(codepoints.clone(), None, Some(name), status.clone().ok());
 
                     // Don't insert unqualified codepoints unless we don't have a mapping for this name anyway
-                    if status != "unqualified" || self.get_by_name(&name).is_none() {
+                    if status.unwrap_or_default().is_emoji() || self.get_by_name(&name).is_none() {
                         self.insert_lookup_name(&name, codepoints.clone());
                     }
                 } else {
@@ -560,7 +555,8 @@ impl EmojiTable {
             .iter()
             // Only validate emojis that we have names for (i.e. they're in emoji-test.txt. Otherwise they won't matter anyway)
             // And those with an EmojiKind, as otherwise it's likely not an emoji
-            .filter_map(|(key, (kinds, name))| if name.is_some() && !kinds.is_empty() {
+            .filter_map(|(key, (kinds, name, status))| if
+                status.unwrap_or_default().is_emoji() || (name.is_some() && !kinds.is_empty()) {
                 Some(key)
             } else {
                 None
@@ -630,10 +626,10 @@ impl Default for EmojiTable {
 }
 
 impl From<HashMap<EmojiTableKey, EmojiTableEntry>> for EmojiTable {
-    fn from(table: HashMap<Vec<u32>, (Vec<EmojiKind>, Option<String>), RandomState>) -> Self {
+    fn from(table: HashMap<Vec<u32>, EmojiTableEntry, RandomState>) -> Self {
         let names_map: HashMap<String, EmojiTableKey> = table
             .iter()
-            .filter_map(|(codepoint, (_, name))| name.as_ref().map(|name| (name.clone(), codepoint.clone())))
+            .filter_map(|(codepoint, (_, name, _))| name.as_ref().map(|name| (name.clone(), codepoint.clone())))
             .collect();
         EmojiTable(table, names_map)
     }
@@ -646,7 +642,7 @@ impl From<EmojiTable> for HashMap<EmojiTableKey, EmojiTableEntry> {
 }
 
 impl AsRef<HashMap<EmojiTableKey, EmojiTableEntry>> for EmojiTable {
-    fn as_ref(&self) -> &HashMap<Vec<u32>, (Vec<EmojiKind>, Option<String>), RandomState> {
+    fn as_ref(&self) -> &HashMap<Vec<u32>, EmojiTableEntry, RandomState> {
         &self.0
     }
 }
@@ -666,8 +662,9 @@ pub enum EmojiTableError {
     KeyNotFound(EmojiTableKey),
 }
 
-/// The status of an emoji according to `emoji-test.txt` (currently not used
-pub enum _EmojiTestStatus {
+/// The status of an emoji according to `emoji-test.txt`
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum EmojiStatus {
     /// ? TODO: Find out, what this is
     Component,
     /// It is a regular, RGI emoji
@@ -675,7 +672,44 @@ pub enum _EmojiTestStatus {
     /// ? TODO: Find out, what this is
     MinimallyQualified,
     /// Not actually displayed as an emoji/not RGI
-    Unqualified,
+    Unqualified
+}
+
+impl EmojiStatus {
+    pub fn is_emoji(&self) -> bool {
+        matches!(self, Self::Component | Self::FullyQualified | Self::MinimallyQualified)
+    }
+}
+
+impl Default for EmojiStatus {
+    fn default() -> Self {
+        Self::Unqualified
+    }
+}
+
+impl ToString for EmojiStatus {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Component => "component".to_string(),
+            Self::Unqualified => "unqualified".to_string(),
+            Self::FullyQualified => "fully-qualified".to_string(),
+            Self::MinimallyQualified => "minimally-qualified".to_string()
+        }
+    }
+}
+
+impl FromStr for EmojiStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "component" => Ok(Self::Component),
+            "unqualified" => Ok(Self::Unqualified),
+            "fully-qualified" => Ok(Self::FullyQualified),
+            "minimally-qualified" => Ok(Self::MinimallyQualified),
+            other => Err(other.to_string())
+        }
+    }
 }
 
 #[derive(Debug)]
