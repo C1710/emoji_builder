@@ -13,7 +13,6 @@ fn test_load_pack() {
     assert_eq!(pack.name.as_ref().unwrap(), "Test-Pack");
     assert_eq!(pack.table.len(), 1);
 
-    println!("{:?}", pack.table);
     let screaming_face = Emoji::from_u32_sequence(vec![0x1f631], None).unwrap();
 
     assert_eq!(pack.validate().0.unwrap_err(), vec![screaming_face]);

@@ -138,7 +138,7 @@ impl EmojiTable {
                         unreachable!("Either a range or a sequence has to be captured");
                     }
                 } else {
-                    eprintln!("Malformed line in emoji-table: {}", line);
+                    error!("Malformed line in emoji-table: {}", line);
                 }
             }
         }
