@@ -34,6 +34,7 @@ use sha2::{Digest, Sha256};
 use crate::changes::CheckError::{Io, NoFileSpecified};
 use crate::emoji::Emoji;
 use crate::changes;
+use crate::loadable::{Loadable, LoadingError};
 
 /// A simple struct that maps code sequences to file hashes
 pub struct FileHashes(HashMap<Vec<u32>, Vec<u8>>);
@@ -48,25 +49,6 @@ pub enum CheckError {
 }
 
 impl FileHashes {
-    /// Parses an CSV file to a `FileHashes` table
-    /// It assumes that there is **no** header.
-    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<FileHashes, Error> {
-        let mut reader = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .from_path(path)?;
-        Ok(FileHashes::from_csv_reader(&mut reader))
-    }
-
-    /// Parses an CSV file (from whichever source) to a `FileHashes` table.
-    /// It assumes that there is **no** header.
-    pub fn from_reader<R: io::Read>(reader: R) -> Result<FileHashes, Error> {
-        let mut reader = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .from_reader(reader);
-        Ok(FileHashes::from_csv_reader(&mut reader))
-    }
-
-
     fn from_csv_reader<R: io::Read>(reader: &mut csv::Reader<R>) -> changes::FileHashes {
         let records = reader.records();
         let entries: Vec<(Vec<u32>, Vec<u8>)> = records
@@ -195,6 +177,15 @@ impl FileHashes {
     /// Create a new, empty changelist
     pub fn new() -> FileHashes {
         Self::default()
+    }
+}
+
+impl Loadable for FileHashes {
+    fn from_reader<R>(reader: R) -> Result<Self, LoadingError> where R: Read {
+        let mut reader = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_reader(reader);
+        Ok(FileHashes::from_csv_reader(&mut reader))
     }
 }
 

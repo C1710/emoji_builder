@@ -219,3 +219,12 @@ fn normalize_path(target_path: &mut PathBuf, root_dir: &Path) {
         *target_path = root_dir.join(&target_path);
     }
 }
+
+
+pub trait CliArgLoadable {
+    type Err: std::error::Error + Send + Sync;
+    
+    fn sub_command<'a, 'b>() -> clap::App<'a, 'b>;
+    
+    fn from_cli_args(args: clap::ArgMatches) -> Result<Box<Self>, Self::Err>;
+}

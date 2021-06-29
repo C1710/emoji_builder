@@ -29,7 +29,7 @@
 
 use std::collections::HashMap;
 use std::fs::{copy, create_dir_all, File, remove_file, rename};
-use std::io::Write;
+use std::io::{Write, Read};
 use std::path::{PathBuf, Path};
 use std::str::FromStr;
 use clap::{App, Arg, ArgMatches, SubCommand};
@@ -39,6 +39,7 @@ use sha2::{Digest, Sha256};
 use sha2::digest::generic_array::GenericArray;
 use usvg::FitTo;
 use tiny_skia::Pixmap;
+use serde::Deserialize;
 
 use crate::builder::{EmojiBuilder, PreparationResult};
 use crate::changes::{CheckError, FileHashes};
@@ -46,6 +47,8 @@ use crate::emoji::Emoji;
 use crate::emoji_processor::EmojiProcessor;
 use crate::emoji_processors::reduce_colors::ReduceColors;
 use crate::builders::blobmoji::error::BlobmojiError;
+use crate::configs::builder_config::BuilderConfig;
+use crate::loadable::{Loadable, LoadingError, LoadableImpl, CliArgLoadable};
 
 mod waveflag;
 /// The error type that can occur for the [Blobmoji] builder
@@ -66,6 +69,97 @@ pub struct Blobmoji {
     reduce_colors: Option<Box<ReduceColors>>,
     build_win: bool
 }
+
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct BlobmojiConfig {
+    hashes: Option<PathBuf>,
+    #[serde(default)]
+    render_only: bool,
+    default_font: Option<String>,
+    #[serde(default = "default_true")]
+    waveflag: bool,
+    palette: Option<PathBuf>,
+    #[serde(default)]
+    build_win: bool
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Loadable for BlobmojiConfig {
+    fn from_reader<R>(reader: R) -> Result<Self, LoadingError> where R: Read {
+        Self::from_reader_impl(reader)
+    }
+}
+
+impl CliArgLoadable for BlobmojiConfig {
+    type Err = BlobmojiError;
+
+    fn sub_command<'a, 'b>() -> App<'a, 'b> {
+        let subcommand = SubCommand::with_name("blobmoji")
+            .version("0.1.0")
+            .author("Constantin A. <emoji.builder@c1710.de>")
+            .arg(Arg::with_name("aliases")
+                .short("a")
+                .long("aliases")
+                .value_name("FILE")
+                // TODO: Rephrase it to an actually useful help message
+                .help("Specify a file containing an alias mapping")
+                .takes_value(true)
+                .required(false)
+            )
+            .arg(Arg::with_name("render_only")
+                .short("R")
+                .long("render_only")
+                .help("Only render the images, don't build the font")
+                .takes_value(false)
+                .required(false)
+            )
+            .arg(Arg::with_name("default_font")
+                .short("F")
+                .long("default_font")
+                .help("The font to use if either none is specified or the chosen one is not available")
+                .takes_value(true)
+                .default_value("cursive")
+                .required(false))
+            .arg(Arg::with_name("additional_fonts")
+                .long("font_files")
+                .help("Additional fonts to load besides the system provided ones")
+                .long_help("Additional fonts to load besides the system provided ones. \
+                You may specify directories or files")
+                .takes_value(true)
+                .required(false)
+                .value_name("FILE/DIR")
+                .multiple(true))
+            .arg(Arg::with_name("waveflag")
+                .short("w")
+                .long("waveflag")
+                .help("Enable if the flags should get a wavy appearance.")
+                .takes_value(false)
+                .required(false))
+            .arg(Arg::with_name("ttx_tmpl")
+                .long("ttx-tmpl")
+                .help("A template file for the font, e.g. containing version and author information")
+                .takes_value(true)
+                .required(false)
+                .value_name("FILE"))
+            .arg(Arg::with_name("win10")
+                .long("win")
+                .help("Build a Windows 10-compatible font as well (it contains additional font tables)")
+                .long_help("Build a Windows 10-compatible font as well (it contains additional font tables).\nMicrosoft, Windows are trademarks of the Microsoft group of companies.")
+                .takes_value(false)
+                .required(false));
+        let reduce_color_args = ReduceColors::cli_arguments(&subcommand.p.global_args);
+        subcommand.args(&reduce_color_args)
+    }
+
+    fn from_cli_args(matches: ArgMatches) -> Result<Box<Self>, Self::Err> {
+        todo!()
+    }
+}
+
+impl BuilderConfig for BlobmojiConfig {}
 
 const WAVE_FACTOR: f32 = 0.1;
 
@@ -88,6 +182,8 @@ impl EmojiBuilder for Blobmoji {
         PathBuf,
         Result<GenericArray<u8, <Sha256 as Digest>::OutputSize>, CheckError>
     );
+
+    type Config = BlobmojiConfig;
 
     fn new(
         build_path: PathBuf,

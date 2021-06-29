@@ -23,6 +23,7 @@ use clap::{App, ArgMatches};
 
 use crate::builder::ResetError::IoError;
 use crate::emoji::Emoji;
+use crate::configs::builder_config::BuilderConfig;
 
 /// Represents (if [core::result::Result::Ok]) a prepared emoji and possibly derived, prepared emojis
 /// (The latter one isn't used yet)
@@ -37,6 +38,8 @@ pub trait EmojiBuilder: Send + Sync {
     type Err: Debug + Send + Sync;
     /// An emoji that has been prepared and can then be used in the building process
     type PreparedEmoji: Send + Sync;
+    
+    type Config: BuilderConfig;
 
     /// Initializes a new `EmojiBuilder` before using it.
     /// This can set up different settings and specify the working directory for the builder.
