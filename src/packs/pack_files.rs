@@ -18,61 +18,38 @@
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{PathBuf, Path};
-use std::io::{BufReader, Error, BufRead};
+use std::io::{BufReader, BufRead, Read};
 use itertools::{Itertools, Either};
-use crate::emoji::{EmojiError, Emoji};
-use crate::emoji_tables::{EmojiTable, ExpansionError};
+use crate::emoji::Emoji;
+use crate::emoji_tables::EmojiTable;
 use crate::packs::pack::EmojiPack;
 use regex::Regex;
+use crate::loadable::{Loadable, LoadingError, LoadableImpl, normalize_paths, ResultAnyway};
 
 
 #[derive(Deserialize, Default, Debug)]
 pub struct EmojiPackFile {
     name: Option<String>,
     unicode_version: Option<(u32, u32)>,
-    table_paths: Option<Vec<PathBuf>>,
-    test_paths: Option<Vec<PathBuf>>,
+    table_files: Option<Vec<PathBuf>>,
+    test_files: Option<Vec<PathBuf>>,
     emoji_dirs: Option<Vec<PathBuf>>,
     flag_dirs: Option<Vec<PathBuf>>,
     aliases: Option<PathBuf>,
-    config: Option<HashMap<String, String>>
+    config: Option<HashMap<String, String>>,
+    offline: Option<bool>,
 }
 
-pub enum LoadingError {
-    Io(std::io::Error),
-    Multiple(Vec<LoadingError>),
-    Emoji(EmojiError),
-    Serde(Box<dyn std::error::Error>),
-    MissingParameter,
-    #[cfg(feature = "online")]
-    Reqwest(reqwest::Error)
-}
 
-pub type ResultAnyway<T, E> = Result<T, (T, E)>;
 
 const EMOJI_SEQUENCE_UNDERSCORE: &str = r"(([A-Fa-f0-9]{1,8})([_\s][A-Fa-f0-9]{1,8})*)";
 
 impl EmojiPackFile {
-    pub fn from_file(file: &Path) -> Result<Self, LoadingError> {
-        let reader = std::fs::File::open(file)?;
-        let reader = BufReader::new(reader);
-        let mut deserializer = serde_json::Deserializer::from_reader(reader);
-        let result = Self::deserialize(&mut deserializer).map_err(|err| LoadingError::Serde(Box::new(err)));
-        if let Ok(mut pack) = result {
-            if let Some(parent) = file.parent() {
-                pack.normalize_paths(parent);
-            }
-            Ok(pack)
-        } else {
-            result
-        }
-    }
-
     pub fn load_tables(&self) -> ResultAnyway<EmojiTable, LoadingError> {
         let no_path = vec![];
         let mut table = EmojiTable::new();
-        let table_paths = self.table_paths.as_ref().unwrap_or(&no_path);
-        let test_paths = self.test_paths.as_ref().unwrap_or(&no_path);
+        let table_paths = self.table_files.as_ref().unwrap_or(&no_path);
+        let test_paths = self.test_files.as_ref().unwrap_or(&no_path);
 
         let table_paths = table_paths.iter()
             .map(|path| (false, path));
@@ -80,7 +57,10 @@ impl EmojiPackFile {
             .map(|path| (true, path));
 
         // TODO: Parallelize
-        let expansion_errors: Vec<LoadingError> = table_paths.chain(test_paths)
+        // When compiling this without the online-feature, the mut becomes unused.
+        // It would however be overly complicated to conditionally remove it here
+        #[allow(unused_mut)]
+        let mut expansion_errors: Vec<LoadingError> = table_paths.chain(test_paths)
             .map(|(is_test, path)| (is_test, std::fs::File::open(path)))
             .map(|(is_test, file)| (is_test, file.map(BufReader::new)))
             // TODO: Use flatten once it's stabilized
@@ -97,7 +77,6 @@ impl EmojiPackFile {
             .map(|error| error.into())
             .collect();
 
-        /*
         #[cfg(feature = "online")]
         if !self.offline.unwrap_or(false) {
             if let Some(unicode_version) = self.unicode_version {
@@ -107,7 +86,6 @@ impl EmojiPackFile {
                 }
             }
         }
-         */
 
         if !expansion_errors.is_empty() {
             Err((table, expansion_errors.into()))
@@ -177,27 +155,41 @@ impl EmojiPackFile {
                 .collect();
             Ok(aliases)
         } else {
-            Err(LoadingError::MissingParameter.into())
+            Err((HashMap::new(), LoadingError::MissingParameter.into()))
         }
     }
 
     pub fn load(self) -> ResultAnyway<EmojiPack, LoadingError> {
+        let mut errors = Vec::with_capacity(8);
+
         let table = self.load_tables();
-        let emojis = self.load_emojis(table.as_ref().ok());
-        let mut errors = Vec::with_capacity(2);
+
+        let emojis = if self.emoji_dirs.is_some() {
+            self.load_emojis(table.as_ref().ok())
+        } else {
+            Ok(HashSet::new())
+        };
+
         let table = table.unwrap_or_else(|(table, error)| {
             errors.push(error);
             table
         });
-        let mut emojis = emojis.unwrap_or_else(|(emojis, error)| {
-            errors.push(error);
-            emojis
-        });
-        
-        let aliases = self.load_aliases().unwrap_or_else(|(aliases, error)| {
-            errors.push(error);
-            aliases
-        });
+
+        let mut emojis = emojis
+            .unwrap_or_else(|(emojis, error)| {
+                errors.push(error);
+                emojis
+            }
+        );
+
+        let aliases = if self.aliases.is_some() {
+            self.load_aliases().unwrap_or_else(|(aliases, error)| {
+                errors.push(error);
+                aliases
+            })
+        } else {
+            HashMap::new()
+        };
         
         aliases.into_iter()
             .map(|(from, to)| to.alias(from.sequence))
@@ -222,67 +214,37 @@ impl EmojiPackFile {
     }
 
     fn normalize_paths(&mut self, root_dir: &Path) {
-        if let Some(mut path) = self.table_paths.as_mut() {
-            normalize_paths(&mut path, root_dir)
+        if let Some(mut path) = self.table_files.as_mut() {
+            normalize_paths(&mut path, root_dir);
         }
-        if let Some(mut path) = self.test_paths.as_mut() {
-            normalize_paths(&mut path, root_dir)
+        if let Some(mut path) = self.test_files.as_mut() {
+            normalize_paths(&mut path, root_dir);
         }
         if let Some(mut path) = self.emoji_dirs.as_mut() {
-            normalize_paths(&mut path, root_dir)
+            normalize_paths(&mut path, root_dir);
         }
         if let Some(mut path) = self.flag_dirs.as_mut() {
-            normalize_paths(&mut path, root_dir)
+            normalize_paths(&mut path, root_dir);
         }
     }
 }
 
-fn normalize_paths(target_paths: &mut Vec<PathBuf>, root_dir: &Path) {
-    target_paths.iter_mut()
-        .for_each(|path| normalize_path(path, root_dir));
-}
-
-fn normalize_path(target_path: &mut PathBuf, root_dir: &Path) {
-    if !target_path.has_root() {
-        // In this case, we assume, the path is relative in which case, we'll append it to the
-        // root_dir and canonicalize it
-        *target_path = root_dir.join(&target_path);
-    }
-}
-
-impl From<std::io::Error> for LoadingError {
-    fn from(err: Error) -> Self {
-        Self::Io(err)
-    }
-}
-
-impl From<EmojiError> for LoadingError {
-    fn from(err: EmojiError) -> Self {
-        Self::Emoji(err)
-    }
-}
-
-impl<T> From<Vec<T>> for LoadingError
-    where T: Into<LoadingError> {
-    fn from(errs: Vec<T>) -> Self {
-        Self::Multiple(errs.into_iter().map(|err| err.into()).collect())
-    }
-}
-
-impl From<ExpansionError> for LoadingError {
-    fn from(err: ExpansionError) -> Self {
-        match err {
-            ExpansionError::Io(err) => Self::Io(err),
-            ExpansionError::Multiple(err) => err.into(),
-            #[cfg(feature = "online")]
-            ExpansionError::Reqwest(err) => Self::Reqwest(err)
+impl Loadable for EmojiPackFile {
+    fn from_file(file: &Path) -> Result<Self, LoadingError> {
+        let reader = std::fs::File::open(file)?;
+        let reader = BufReader::new(reader);
+        let result = Self::from_reader(reader);
+        if let Ok(mut pack) = result {
+            if let Some(parent) = file.parent() {
+                pack.normalize_paths(parent);
+            }
+            Ok(pack)
+        } else {
+            result
         }
     }
-}
 
-impl<T> From<LoadingError> for (T, LoadingError)
-    where T: Default {
-    fn from(error: LoadingError) -> Self {
-        (T::default(), error)
+    fn from_reader<R>(reader: R) -> Result<Self, LoadingError> where R: Read {
+        Self::from_reader_impl(reader)
     }
 }

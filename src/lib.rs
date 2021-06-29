@@ -40,7 +40,8 @@ pub mod deriving_emoji_processor;
 /// Concrete emoji processors
 pub mod emoji_processors;
 pub mod packs;
-pub mod config;
+pub mod loadable;
+pub mod configs;
 
 
 #[cfg(test)]

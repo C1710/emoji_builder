@@ -17,3 +17,6 @@
 
 pub mod pack_files;
 pub mod pack;
+
+#[cfg(test)]
+mod tests;

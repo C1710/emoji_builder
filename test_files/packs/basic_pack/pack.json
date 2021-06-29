@@ -1,0 +1,10 @@
+{
+  "name": "Test-Pack",
+  "table_files": [],
+  "test_files": ["emoji-test.txt"],
+  "emoji_dirs": ["./emojis"],
+  "config": {
+    "Bla": "Blubb",
+    "should be": "ignored"
+  }
+}

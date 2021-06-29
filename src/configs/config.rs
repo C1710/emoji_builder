@@ -17,16 +17,20 @@
 
 use std::collections::HashMap;
 use crate::packs::pack::EmojiPack;
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 use clap::ArgMatches;
 use crate::builder::EmojiBuilder;
+use crate::loadable::{Loadable, LoadingError};
+use std::io::Read;
+use crate::configs::config_file::PackConfigFile;
+use std::convert::{TryFrom, TryInto};
 
 pub struct PackConfig {
-    output_path: Option<PathBuf>,
-    output_name: Option<String>,
-    build_path: Option<PathBuf>,
-    packs: Vec<EmojiPack>,
-    config: HashMap<String, String>
+    pub output_path: Option<PathBuf>,
+    pub output_name: Option<String>,
+    pub build_path: Option<PathBuf>,
+    pub packs: Vec<EmojiPack>,
+    pub config: HashMap<String, String>
 }
 
 impl PackConfig {
@@ -70,5 +74,39 @@ impl PackConfig {
                 .map(|output_name| output_name as &str)
                 .unwrap_or("font.ttf"))
             )
+    }
+}
+
+impl TryFrom<PackConfigFile> for PackConfig {
+    type Error = LoadingError;
+
+    fn try_from(config_file: PackConfigFile) -> Result<Self, Self::Error> {
+        match config_file.load() {
+            Ok(config) => Ok(config),
+            Err((_, err)) => Err(err)
+        }
+    }
+}
+
+impl TryFrom<Result<PackConfigFile, LoadingError>> for PackConfig {
+    type Error = LoadingError;
+
+    fn try_from(config_file: Result<PackConfigFile, LoadingError>) -> Result<Self, Self::Error> {
+        match config_file.map(Self::try_from) {
+            Ok(Ok(config)) => Ok(config),
+            Ok(Err(err)) => Err(err),
+            Err(err) => Err(err)
+        }
+    }
+}
+
+impl Loadable for PackConfig {
+    fn from_file(file: &Path) -> Result<Self, LoadingError> {
+        PackConfigFile::from_file(file).try_into()
+    }
+
+    fn from_reader<R>(reader: R) -> Result<Self, LoadingError>
+        where R: Read {
+        PackConfigFile::from_reader(reader).try_into()
     }
 }

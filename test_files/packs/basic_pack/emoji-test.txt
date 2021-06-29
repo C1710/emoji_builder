@@ -1,0 +1,3 @@
+# This is a comment
+# The validation should report this emoji as missing
+1F631                                      ; fully-qualified     # 😱 E0.6 face screaming in fear

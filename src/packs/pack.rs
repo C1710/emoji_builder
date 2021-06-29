@@ -35,17 +35,18 @@
 use crate::emoji_tables::EmojiTable;
 use std::collections::{HashSet, HashMap};
 use crate::emoji::Emoji;
-use crate::builder::EmojiBuilder;
-use std::path::{PathBuf, Path};
+use std::path::Path;
 use std::iter::FromIterator;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator, ParallelIterator, ParallelExtend};
 use itertools::Itertools;
 use std::hash::Hash;
 use std::cmp::max;
-use crate::packs::pack_files::{LoadingError, EmojiPackFile};
+use crate::packs::pack_files::EmojiPackFile;
 use std::sync::Mutex;
 use std::cell::Cell;
-use clap::ArgMatches;
+use crate::loadable::{LoadingError, Loadable};
+use std::convert::{TryFrom, TryInto};
+use std::io::Read;
 
 #[derive(Debug, Default)]
 pub struct EmojiPack {
@@ -57,9 +58,10 @@ pub struct EmojiPack {
 }
 
 impl EmojiPack {
-    pub fn from_file(path: &Path) -> Result<Self, (Option<Self>, LoadingError)> {
+    pub fn from_file_anyway(path: &Path) -> Result<Self, (Option<Self>, LoadingError)> {
         match EmojiPackFile::from_file(path)
             .map(|pack_file| pack_file.load()) {
+
             Ok(Ok(pack)) => Ok(pack),
             Ok(Err((pack, err))) => Err((Some(pack), err)),
             Err(err) => Err((None, err))
@@ -103,8 +105,11 @@ impl EmojiPack {
     }
 
     pub fn push(&mut self, other: EmojiPack) {
-        if other.name.is_some() {
-            self.name = other.name;
+        if let Some(name) = self.name.as_mut() {
+            if let Some(other_name) = other.name.as_ref() {
+                name.push_str(" + ");
+                name.push_str(other_name);
+            }
         }
         self.unicode_version = max(self.unicode_version, other.unicode_version);
         self.table.extend(other.table);
@@ -113,16 +118,21 @@ impl EmojiPack {
     }
     
     pub fn push_ref(&mut self, other: &EmojiPack) {
-        if other.name.is_some() {
-            self.name = other.name.clone();
+        if let Some(name) = self.name.as_mut() {
+            if let Some(other_name) = other.name.as_ref() {
+                name.push_str(" + ");
+                name.push_str(other_name);
+            }
         }
         self.unicode_version = max(self.unicode_version, other.unicode_version);
         self.table.extend(other.table.clone());
         self.emojis.extend(other.emojis.iter().cloned());
-        self.config.extend(other.config.iter().cloned());
+        self.config.extend(other.config.iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+        );
     }
 
-    pub fn extend_preserve_own(&mut self, other: EmojiPack) {
+    pub fn push_low_importance(&mut self, other: EmojiPack) {
         self.table.extend_preserve_own(other.table);
         self.unicode_version = max(self.unicode_version, other.unicode_version);
         self.emojis = other.emojis.into_iter().chain(self.emojis.drain().into_iter()).collect();
@@ -135,9 +145,40 @@ impl EmojiPack {
             .collect();
         self.table.validate(&sequences, false)
     }
-
 }
 
+impl Loadable for EmojiPack {
+    fn from_file(file: &Path) -> Result<Self, LoadingError> {
+        EmojiPackFile::from_file(file).try_into()
+    }
+
+    fn from_reader<R>(reader: R) -> Result<Self, LoadingError> where R: Read {
+        EmojiPackFile::from_reader(reader).try_into()
+    }
+}
+
+impl TryFrom<EmojiPackFile> for EmojiPack {
+    type Error = LoadingError;
+
+    fn try_from(pack_file: EmojiPackFile) -> Result<Self, Self::Error> {
+        match pack_file.load() {
+            Err((_pack, err)) => Err(err),
+            Ok(pack) => Ok(pack),
+        }
+    }
+}
+
+impl TryFrom<Result<EmojiPackFile, LoadingError>> for EmojiPack {
+    type Error = LoadingError;
+
+    fn try_from(pack_file: Result<EmojiPackFile, LoadingError>) -> Result<Self, Self::Error> {
+        match pack_file.map(Self::try_from) {
+            Ok(Ok(pack)) => Ok(pack),
+            Ok(Err(err)) => Err(err),
+            Err(err) => Err(err)
+        }
+    }
+}
 
 impl FromIterator<EmojiPack> for EmojiPack {
     fn from_iter<T: IntoIterator<Item=EmojiPack>>(iter: T) -> Self {
@@ -165,7 +206,7 @@ impl ParallelExtend<EmojiPack> for EmojiPack {
         let mutex = Mutex::new(Cell::new(self));
         // Using interior mutability here is okay as we use a Mutex to ensure that only one thread
         // can update self at a time
-        par_iter.into_par_iter().for_each(|pack| mutex.lock().unwrap().get_mut().extend_preserve_own(pack));
+        par_iter.into_par_iter().for_each(|pack| mutex.lock().unwrap().get_mut().push_low_importance(pack));
     }
 }
 

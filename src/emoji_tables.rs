@@ -29,6 +29,8 @@ use itertools::Itertools;
 use regex::Regex;
 
 use crate::emoji::{EmojiKind, Emoji};
+#[cfg(feature = "online")]
+use std::sync::RwLock;
 
 /// A code sequence
 type EmojiTableKey = Vec<u32>;
@@ -491,8 +493,34 @@ impl EmojiTable {
     #[cfg(feature = "online")]
     #[inline]
     fn get_data_file_online(client: &reqwest::blocking::Client, version: (u32, u32), file: &'static str) -> Result<std::io::Cursor<bytes::Bytes>, reqwest::Error> {
+        // Check if we can return the file from the cache already
+        let cache = TABLE_CACHE.read();
+        if let Ok(cache) = cache {
+            if let Some(cached_files) = cache.get(&version) {
+                if let Some(cached) = cached_files.get(file) {
+                    return Ok(std::io::Cursor::new(cached.clone()));
+                }
+            }
+        }
         let request = client.get(&Self::build_url(version, file)).send();
         let bytes = request?.bytes()?;
+
+        // Insert data into the cache
+        let cache = TABLE_CACHE.write();
+        if let Ok(mut cache) = cache {
+            if let Some(cached_files) = cache.get_mut(&version) {
+                // We need to check again here, since we didn't hold the Lock for some time
+                if !cached_files.contains_key(file) {
+                    cached_files.insert(String::from(file), bytes.clone());
+                }
+            } else {
+                // There are about 4 files for each version, so having 8 should be sufficient
+                let mut cached_files = HashMap::with_capacity(8);
+                cached_files.insert(String::from(file), bytes.clone());
+                cache.insert(version, cached_files);
+            }
+        }
+
         Ok(std::io::Cursor::new(bytes))
     }
 
@@ -622,6 +650,14 @@ impl AsRef<HashMap<EmojiTableKey, EmojiTableEntry>> for EmojiTable {
         &self.0
     }
 }
+
+// 14 Unicode/emoji main versions * 2 minor versions ~= 32 versions
+#[cfg(feature = "online")]
+lazy_static! {
+    static ref TABLE_CACHE: RwLock<HashMap<(u32, u32), HashMap<String, bytes::Bytes>>> =
+        RwLock::new(HashMap::with_capacity(32));
+}
+
 
 /// A representation of errors encountered while parsing or using emoji tables.
 #[derive(Debug)]
