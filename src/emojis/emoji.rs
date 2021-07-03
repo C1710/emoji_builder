@@ -15,6 +15,7 @@
  */
 //! The main data structs for single emojis.
 
+use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -25,11 +26,10 @@ use std::str::FromStr;
 use itertools::Itertools;
 use regex::{CaptureMatches, Regex};
 
-use crate::emoji::EmojiError::NotAFileName;
-use crate::emoji::EmojiKind::{EmojiFlagSequence, EmojiKeycapSequence};
 use crate::emoji_tables::{EmojiTable, EmojiTableError};
 use crate::emoji_tables::EmojiTableError::KeyNotFound;
-use std::cmp::Ordering;
+use crate::emojis::emoji::EmojiError::NotAFileName;
+use crate::emojis::emoji::EmojiKind::{EmojiFlagSequence, EmojiKeycapSequence};
 
 /// A struct that holds information for one particular emoji (which might also be a sequence).
 #[derive(Debug, Eq, Clone)]
@@ -50,31 +50,6 @@ pub struct Emoji {
     pub svg_path: Option<PathBuf>
 }
 
-/// An internal representation for the different emoji types represented in the Unicode® Tables
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub enum EmojiKind {
-    /// A regular emoji
-    Emoji,
-    /// An ZWJ-sequence (a sequence containing `U+200D`)
-    EmojiZwjSequence,
-    /// A sequence of multiple characters
-    EmojiSequence,
-    /// Something that can be displayed as an emoji
-    EmojiPresentation,
-    /// Something that can be combined with a modifier
-    ModifierBase,
-    /// ???
-    EmojiComponent,
-    /// A sequence including the keycap character (no idea, why it exists)
-    EmojiKeycapSequence,
-    /// A flag
-    EmojiFlagSequence,
-    /// An emoji with a modifier (e.g. skin tone)
-    EmojiModifierSequence,
-    /// Something else, that is not mapped here
-    Other(String),
-}
-
 impl Emoji {
     /// Parses a character sequence (e.g. from a filename) into an emoji object
     /// (optionally with an `EmojiTable` for metadata).
@@ -85,7 +60,7 @@ impl Emoji {
     /// If you wish to use another delimiter, you'll (currenty) need to use `from_u32_sequence`.
     /// # Examples
     /// ```
-    /// use emoji_builder::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji::Emoji;
     ///
     /// let party_face = Emoji::from_sequence("emoji_u1f973.svg", None).unwrap();
     /// assert_eq!(party_face, Emoji {
@@ -97,12 +72,12 @@ impl Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emoji::{Emoji, EmojiKind};
+    /// use emoji_builder::emojis::emoji::{Emoji, EmojiKind};
     /// use std::collections::HashMap;
-    /// use emoji_builder::emoji_tables::EmojiTable;
+    /// use emoji_builder::emoji_tables::{EmojiTable };
     ///
     /// let mut table = EmojiTable::new();
-    /// table.insert(vec![0x1f914 as u32], (vec![EmojiKind::Emoji], Some(String::from("Thinking Face"))));
+    /// table.insert(vec![0x1f914 as u32], (vec![EmojiKind::Emoji], Some(String::from("Thinking Face")), vec![EmojiStatus::FullyQualified]));
     ///
     /// let thinking = Emoji::from_sequence("1f914.png", Some(&table)).unwrap();
     ///
@@ -131,7 +106,7 @@ impl Emoji {
     /// If the sequence is empty, it will return an error.
     /// # Examples
     /// ```
-    /// use emoji_builder::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji::Emoji;
     ///
     /// let seq = vec![0x1f3f3, 0x200d, 0xf308];
     ///
@@ -173,7 +148,7 @@ impl Emoji {
     /// Everything after the first dot (`.`) will be ignored (usually file extensions)
     /// # Examples
     /// ```
-    /// use emoji_builder::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji::Emoji;
     ///
     /// let germany = "DE";
     ///
@@ -186,7 +161,7 @@ impl Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji::Emoji;
     ///
     /// let nrw = "de-nw.svg";
     ///
@@ -199,7 +174,7 @@ impl Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji::Emoji;
     ///
     /// let salzburg = "at-5.boo";
     ///
@@ -259,7 +234,7 @@ impl Emoji {
     /// # Examples
     /// ```
     /// use std::path::{Path, PathBuf};
-    /// use emoji_builder::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji::Emoji;
     ///
     /// let path_str = String::from("1f914.svg");
     ///
@@ -278,7 +253,7 @@ impl Emoji {
     ///
     /// ```
     /// use std::path::{Path, PathBuf};
-    /// use emoji_builder::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji::Emoji;
     ///
     /// let path_str = String::from("DE.png");
     ///
@@ -348,7 +323,7 @@ impl Emoji {
     /// # Example
     /// ```
     /// use std::collections::HashMap;
-    /// use emoji_builder::emoji::{EmojiKind, Emoji};
+    /// use emoji_builder::emojis::emoji::{EmojiKind, Emoji};
     /// use emoji_builder::emoji_tables::EmojiTable;
     /// use emoji_builder::emoji_tables::EmojiStatus;
     ///
@@ -389,7 +364,7 @@ impl Emoji {
     /// - `EmojiKeycapSequence`
     /// # Examples
     /// ```
-    /// use emoji_builder::emoji::{Emoji,EmojiKind};
+    /// use emoji_builder::emojis::emoji::{Emoji,EmojiKind};
     ///
     /// let emoji = Emoji::from(vec![0x1f914]);
     ///
@@ -399,7 +374,7 @@ impl Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emoji::{Emoji, EmojiKind};
+    /// use emoji_builder::emojis::emoji::{Emoji, EmojiKind};
     ///
     /// let emoji = Emoji::from(vec![0x1f914, 0x200d, 0x42]);
     ///
@@ -409,7 +384,7 @@ impl Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emoji::{Emoji, EmojiKind};
+    /// use emoji_builder::emojis::emoji::{Emoji, EmojiKind};
     ///
     /// let emoji = Emoji::from(vec![0x1f914, 0x42]);
     ///
@@ -419,7 +394,7 @@ impl Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emoji::{Emoji, EmojiKind};
+    /// use emoji_builder::emojis::emoji::{Emoji, EmojiKind};
     ///
     /// let emoji = Emoji::from(vec![]);
     ///
@@ -429,8 +404,8 @@ impl Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emoji::{Emoji, EmojiKind};
-    /// use emoji_builder::emoji::EmojiKind::{EmojiSequence, EmojiFlagSequence};
+    /// use emoji_builder::emojis::emoji::{Emoji, EmojiKind};
+    /// use emoji_builder::emojis::emoji::EmojiKind::{EmojiSequence, EmojiFlagSequence};
     ///
     /// let emoji = Emoji::from_flag("DE", None).unwrap();
     ///
@@ -440,8 +415,8 @@ impl Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emoji::{Emoji, EmojiKind};
-    /// use emoji_builder::emoji::EmojiKind::{EmojiSequence, EmojiKeycapSequence};
+    /// use emoji_builder::emojis::emoji::{Emoji, EmojiKind};
+    /// use emoji_builder::emojis::emoji::EmojiKind::{EmojiSequence, EmojiKeycapSequence};
     ///
     /// let emoji = Emoji::from(vec![0x2a, 0xfe0f, 0x20e3]);
     ///
@@ -478,15 +453,15 @@ impl Emoji {
     /// # Example
     /// ```
     /// use std::collections::HashMap;
-    /// use emoji_builder::emoji::{EmojiKind, Emoji};
-    /// use emoji_builder::emoji_tables::EmojiTable;
+    /// use emoji_builder::emojis::emoji::{EmojiKind, Emoji};
+    /// use emoji_builder::emoji_tables::{EmojiTable, EmojiStatus};
     ///
     /// let mut table = EmojiTable::new();
     /// let sequence = vec![0x1f914];
     /// let kind = vec![EmojiKind::Emoji];
     /// let name = String::from("Thinking Face");
     ///
-    /// table.insert(sequence.clone(), (kind.clone(), Some(name.clone())));
+    /// table.insert(sequence.clone(), (kind.clone(), Some(name.clone()), Some(vec![EmojiStatus::FullyQualified])));
     ///
     /// let mut emoji = Emoji::from(sequence.clone());
     /// emoji.set_name(&table);
@@ -522,7 +497,7 @@ impl Emoji {
     /// Whether it is a flag is decided by its structure.
     /// # Examples
     /// ```
-    /// use emoji_builder::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji::Emoji;
     ///
     /// let germany = Emoji::from_flag("de", None).unwrap();
     ///
@@ -530,7 +505,7 @@ impl Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji::Emoji;
     ///
     /// let thinking = Emoji::from_u32_sequence(vec![0x1f914], None).unwrap();
     ///
@@ -538,7 +513,7 @@ impl Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji::Emoji;
     ///
     /// let salzburg = Emoji::from_flag("AT-5", None).unwrap();
     ///
@@ -587,7 +562,7 @@ impl Emoji {
     /// valid country or subdivision flags
     /// # Examples
     /// ```
-    /// use emoji_builder::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji::Emoji;
     ///
     /// let germany = Emoji::from_flag("DE", None).unwrap();
     ///
@@ -627,7 +602,7 @@ impl Emoji {
     /// ## Example
     /// ```
     ///
-    /// use emoji_builder::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji::Emoji;
     ///
     /// // Face with heart eyes
     /// let emoji = Emoji::from_u32_sequence(vec![0x1f60d], None).unwrap();
@@ -719,56 +694,6 @@ impl Ord for Emoji {
     }
 }
 
-impl FromStr for EmojiKind {
-    type Err = UnknownEmojiKind;
-
-    fn from_str(kind: &str) -> Result<Self, Self::Err> {
-        let kind = kind.to_lowercase().replace("rgi", "").replace('_', " ");
-        let kind = kind.trim();
-        match kind {
-            "emoji" => Ok(EmojiKind::Emoji),
-            "basic emoji" => Ok(EmojiKind::Emoji),
-            "emoji zwj sequence" => Ok(EmojiKind::EmojiZwjSequence),
-            "emoji sequence" => Ok(EmojiKind::EmojiSequence),
-            "emoji presentation" => Ok(EmojiKind::EmojiPresentation),
-            "modifier base" => Ok(EmojiKind::ModifierBase),
-            "emoji modifier base" => Ok(EmojiKind::ModifierBase),
-            "emoji component" => Ok(EmojiKind::EmojiComponent),
-            "emoji keycap sequence" => Ok(EmojiKind::EmojiKeycapSequence),
-            "emoji flag sequence" => Ok(EmojiKind::EmojiFlagSequence),
-            "emoji modifier sequence" => Ok(EmojiKind::EmojiModifierSequence),
-            _ => Err(UnknownEmojiKind(EmojiKind::Other(kind.to_owned()))),
-        }
-    }
-}
-
-/// A very simple wrapper that indicates, that a given string representation of an Emoji kind did
-/// not match any of the default cases.
-/// If you don't care about that, you can simply ignore it.
-/// # Examples
-/// ```
-/// use emoji_builder::emoji::EmojiKind;
-/// use std::str::FromStr;
-/// 
-/// let kind = EmojiKind::from_str(":P");
-/// assert!(kind.is_err());
-/// assert_eq!(EmojiKind::Other(String::from(":p")), kind.err().unwrap().get());
-/// ```
-pub struct UnknownEmojiKind(EmojiKind);
-
-impl UnknownEmojiKind {
-    /// Returns the unknown emoji kind (which will be of the type [EmojiKind::Other])
-    pub fn get(self) -> EmojiKind {
-        self.0
-    }
-}
-
-impl From<UnknownEmojiKind> for EmojiKind {
-    fn from(kind: UnknownEmojiKind) -> Self {
-        kind.0
-    }
-}
-
 impl Display for Emoji {
     /// Tries to show the appropriate (if possible human-understandable) name for this emoji.
     /// If the name attribute is not `None`, it will output that one.
@@ -777,7 +702,7 @@ impl Display for Emoji {
     /// # Examples
     /// ```
     ///
-    /// use emoji_builder::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji::Emoji;
     ///
     /// let thinking = Emoji::from_u32_sequence(vec![0x1f914], None).unwrap();
     ///
@@ -786,7 +711,7 @@ impl Display for Emoji {
     ///
     /// ```
     ///
-    /// use emoji_builder::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji::Emoji;
     ///
     /// let rainbow = Emoji::from_u32_sequence(vec![0x1f3f3, 0xfe0f, 0x200d, 0x1f308], None).unwrap();
     ///
@@ -794,7 +719,7 @@ impl Display for Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji::Emoji;
     ///
     /// let nrw = Emoji::from_flag("de-nw", None).unwrap();
     ///
@@ -802,7 +727,7 @@ impl Display for Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji::Emoji;
     ///
     /// let mut party = Emoji::from_u32_sequence(vec![0x1f973], None).unwrap();
     /// party.name = Some(String::from("Party face"));
@@ -819,35 +744,6 @@ impl Display for Emoji {
                 .map(|codepoint| format!("{:X}", codepoint))
                 .join("-"))
         }
-    }
-}
-
-impl ToString for EmojiKind {
-    fn to_string(&self) -> String {
-        match self {
-            EmojiKind::Emoji => {"Emoji".to_string()}
-            EmojiKind::EmojiZwjSequence => {"Emoji_ZWJ_Sequence".to_string()}
-            EmojiKind::EmojiSequence => {"Emoji_Sequence".to_string()}
-            EmojiKind::EmojiPresentation => {"Emoji_Presentation".to_string()}
-            EmojiKind::ModifierBase => {"Emoji_Modifier_Base".to_string()}
-            EmojiKind::EmojiComponent => {"Emoji_Component".to_string()}
-            EmojiKeycapSequence => {"Emoji_Keycap_Sequence".to_string()}
-            EmojiFlagSequence => {"Emoji_Flag_Sequence".to_string()}
-            EmojiKind::EmojiModifierSequence => {"Emoji_Modifier_Sequence".to_string()}
-            EmojiKind::Other(name) => {name.replace(" ", "_")}
-        }
-    }
-}
-
-impl PartialOrd for EmojiKind {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.to_string().partial_cmp(&other.to_string())
-    }
-}
-
-impl Ord for EmojiKind {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.to_string().cmp(&other.to_string())
     }
 }
 

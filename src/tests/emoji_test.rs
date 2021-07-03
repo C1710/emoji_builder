@@ -19,8 +19,8 @@ use std::fs;
 use std::iter::FromIterator;
 use std::path::PathBuf;
 
-use crate::emoji::Emoji;
-use crate::emoji::EmojiKind::EmojiZwjSequence;
+use crate::emojis::emoji::Emoji;
+use crate::emojis::emoji::EmojiKind::EmojiZwjSequence;
 use crate::emoji_tables::EmojiTable;
 
 const SVG_PATH: &str = "test_files/svg";

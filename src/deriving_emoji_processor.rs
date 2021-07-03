@@ -15,7 +15,7 @@
  */
 
 use crate::emoji_processor::EmojiProcessor;
-use crate::emoji::Emoji;
+use crate::emojis::emoji::Emoji;
 
 // TODO: Enforce documentation
 

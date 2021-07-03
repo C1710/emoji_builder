@@ -39,6 +39,7 @@ gimp_palette = "0.1.1"
 palette = "0.5.0"
 serde = {version = "1.0", features = ["derive"]}
 serde_json = "1.0"
+serde_yaml = "0.8.17"
 include_dir = "0.6.0"
 
 reqwest = { version = "0.10.7", features = ["blocking"], optional = true }

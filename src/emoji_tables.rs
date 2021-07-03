@@ -28,15 +28,17 @@ use std::str::FromStr;
 use itertools::Itertools;
 use regex::Regex;
 
-use crate::emoji::{EmojiKind, Emoji};
+use crate::emojis::emoji::Emoji;
 #[cfg(feature = "online")]
 use std::sync::RwLock;
+use crate::emojis::emoji_kind::EmojiKind;
+use crate::emojis::emoji_status::EmojiStatus;
 
 
 /// A code sequence
 type EmojiTableKey = Vec<u32>;
-// The EmojiKinds and optionally a description/name
-type EmojiTableEntry = (Vec<EmojiKind>, Option<String>, Option<EmojiStatus>);
+// The EmojiKinds and optionally a description/name and a possible status of an emoji
+type EmojiTableEntry = (Vec<EmojiKind>, Option<String>, Vec<EmojiStatus>);
 
 const EMOJI_SEQUENCE_SPACE_REGEX: &str = r"(([A-F0-9a-f]{1,8})(\s+([A-F0-9a-f]{1,8}))*)";
 const EMOJI_STATUS_REGEX: &str = r"(component|fully-qualified|minimally-qualified|unqualified)";
@@ -61,16 +63,14 @@ impl EmojiTable {
     /// (See <https://unicode.org/Public/emoji/12.0/>) and builds a lookup table
     /// to gather additional metadata for emojis.
     ///
-    /// If an emoji sequence (in this case an entry with more than one codepoints) contains the VS-16
-    /// (Variant Selector-16 - Emoji Representation, U+FE0F), the sequence will also be included without the VS-16.
-    ///
     /// **Important** Currently, names are only extracted from emoji-test.txt-like files
     /// # Examples:
     /// ```
     /// use std::path::PathBuf;
-    /// use emoji_builder::emoji::EmojiKind::EmojiZwjSequence;
+    /// use emoji_builder::emojis::emoji::EmojiKind::EmojiZwjSequence;
     /// use emoji_builder::emoji_tables::EmojiTable;
     /// use std::collections::HashMap;
+    /// use emoji_builder::emojis::emoji_kind::EmojiKind::EmojiZwjSequence;
     ///
     /// // Contains the entry
     /// // 1F3F3 FE0F 200D 1F308 ; Emoji_ZWJ_Sequence  ; rainbow flag #  7.0  [1] (🏳️‍🌈)
@@ -82,12 +82,13 @@ impl EmojiTable {
     /// let rainbow = vec![0x1f3f3, 0xfe0f, 0x200d, 0x1f308];
     /// let rainbow_no_fe0f = vec![0x1f3f3, 0x200d, 0x1f308];
     ///
-    /// let rainbow_entry = (vec![EmojiZwjSequence], None);
+    /// let rainbow_entry = (vec![EmojiZwjSequence], None, None);
     ///
     /// assert!(table.as_ref().contains_key(&rainbow));
-    /// assert!(table.as_ref().contains_key(&rainbow_no_fe0f));
+    /// // Versions without FE0F are _not_ included anymore
+    /// assert!(!table.as_ref().contains_key(&rainbow_no_fe0f));
     ///
-    /// assert_eq!(*table.get(&rainbow).unwrap(), rainbow_entry);
+    /// assert_eq!(rainbow_entry, *table.get(&rainbow).unwrap());
     /// ```
     pub fn from_files<P: AsRef<Path>>(paths: &[P]) -> Result<EmojiTable, Error> {
         let mut table = EmojiTable::new();
@@ -102,14 +103,13 @@ impl EmojiTable {
     /// `emoji-data.txt`.
     /// Only the emoji itself and its kind(s) is/are extended.
     /// Names are extended from `emoji-test.txt`-like files, using [EmojiTable::expand_descriptions_from_test_data]
-    pub fn expand<I: BufRead>(&mut self, reader: I) -> Result<(), Error> {
+    pub fn expand<I: BufRead>(&mut self, reader: I) {
         lazy_static! {
             static ref HEX_SEQUENCE: Regex = Regex::new(r"[a-fA-F0-9]{1,8}").unwrap();
             static ref RANGE: Regex = Regex::new(&format!(r"(?P<range>(?P<range_start>{hex})\.\.(?P<range_end>{hex}))", hex = &*HEX_SEQUENCE)).unwrap();
             static ref SEQUENCE: Regex = Regex::new(&format!(r"(?P<sequence>({hex})(\s+({hex}))*)", hex = &*HEX_SEQUENCE)).unwrap();
             static ref EMOJI_REGEX: Regex = Regex::new(&format!(r"(?P<codepoints>{}|{})", &*RANGE, &*SEQUENCE)).unwrap();
-            // TODO: Maybe make this more specific
-            static ref EMOJI_KIND_REGEX: Regex = Regex::new(r"(?P<kind>[A-Za-z_\-]+)").unwrap();
+            static ref EMOJI_KIND_REGEX: Regex = Regex::new(&format!(r"(?P<kind>{}+)", EmojiKind::regex())).unwrap();
             static ref DATA_REGEX: Regex = Regex::new(&format!(r"^{}\s*;\s*{}\s*(;(?P<name>.*)\s*)?(#.*)?$", &*EMOJI_REGEX, &*EMOJI_KIND_REGEX)).unwrap();
         }
 
@@ -142,7 +142,6 @@ impl EmojiTable {
                 }
             }
         }
-        Ok(())
     }
 
     /// Adds the entries from another Unicode® emoji data table-like file to an existing EmojiTable.
@@ -156,7 +155,7 @@ impl EmojiTable {
     /// # Examples
     /// ```
     /// use emoji_builder::emoji_tables::EmojiTable;
-    /// use emoji_builder::emoji::EmojiKind;
+    /// use emoji_builder::emojis::emoji::EmojiKind;
     /// use std::path::PathBuf;
     ///
     /// let mut table = EmojiTable::new();
@@ -167,17 +166,18 @@ impl EmojiTable {
     /// let rainbow = vec![0x1f3f3, 0xfe0f, 0x200d, 0x1f308];
     /// let rainbow_no_fe0f = vec![0x1f3f3, 0x200d, 0x1f308];
     ///
-    /// let rainbow_entry = (vec![EmojiKind::EmojiZwjSequence], None);
+    /// let rainbow_entry = (vec![EmojiKind::EmojiZwjSequence], None, None);
     ///
     /// assert!(table.as_ref().contains_key(&rainbow));
     /// assert!(table.as_ref().contains_key(&rainbow_no_fe0f));
     ///
-    /// assert_eq!(*table.get(&rainbow).unwrap(), rainbow_entry);
+    /// assert_eq!(rainbow_entry, *table.get(&rainbow).unwrap());
     /// ```
     pub fn expand_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
-        self.expand(reader)
+        self.expand(reader);
+        Ok(())
     }
 
     fn _get_description(&self, sequence: &[u32]) -> Option<String> {
@@ -207,6 +207,7 @@ impl EmojiTable {
     /// # Arguments
     /// `emoji`: The codepoint sequence for the emoji
     /// `kind`: The emoji kind to assign for this step
+    /// `status`: Possible EmojiStatuses to add
     /// `description`: The name of the emoji
     fn update_emoji(&mut self,
                     emoji: EmojiTableKey,
@@ -218,7 +219,7 @@ impl EmojiTable {
         if let Some((kinds, existing_description, existing_status)) = existing_entry {
             Self::add_kind(kinds, kind);
             Self::update_description(existing_description, description);
-            *existing_status = status.or(*existing_status)
+            insert_in_order(existing_status, status);
         } else {
             let entry = (
                 // We expect that at some point the emoji will have at least one kind
@@ -243,11 +244,7 @@ impl EmojiTable {
     }
 
     fn add_kind(existing_kinds: &mut Vec<EmojiKind>, kind: Option<EmojiKind>) {
-        if let Some(kind) = kind {
-            if !existing_kinds.contains(&kind) {
-                existing_kinds.insert(existing_kinds.binary_search(&kind).unwrap_err(), kind);
-            }
-        }
+        insert_in_order(existing_kinds, kind)
     }
 
     fn get_codepoint_sequence(raw_codepoints: &str) -> EmojiTableKey {
@@ -273,7 +270,7 @@ impl EmojiTable {
     /// let name = "thinking face";
     /// let codepoint = vec![0x1f914];
     /// let mut table = EmojiTable::new();
-    /// table.insert(codepoint.clone(), (vec![], Some(name.to_string())));
+    /// table.insert(codepoint.clone(), (vec![], Some(name.to_string()), None));
     ///
     /// // We can't find the emoji by its name!
     /// assert_eq!(table.get_by_name(name), None);
@@ -292,7 +289,7 @@ impl EmojiTable {
     /// let codepoint = vec![0x1f914];
     /// let mut table = EmojiTable::new();
     /// // Even if this description string is the same as the name, it does not have to be.
-    /// table.insert(codepoint.clone(), (vec![], Some(name.to_string())));
+    /// table.insert(codepoint.clone(), (vec![], Some(name.to_string()), None));
     /// table.insert_lookup_name(name, codepoint.clone());
     ///
     /// // Assert that we can find an entry with the given name (and that it's the correct one)
@@ -316,7 +313,7 @@ impl EmojiTable {
     ///
     /// let mut table = EmojiTable::new();
     /// let key = vec![0x1f914];
-    /// let entry = (vec![], Some(String::from("Thinking")));
+    /// let entry = (vec![], Some(String::from("Thinking")), None);
     /// table.insert(key.clone(), entry.clone());
     /// table.insert_lookup_name("ThInKiNg_FaCe", key.clone());
     /// assert_eq!(Some((key.clone(), &entry)), table.get_by_name("tHiNkIng-fAcE"));
@@ -383,7 +380,7 @@ impl EmojiTable {
     ///
     /// The syntax of these files is:
     /// `Codepoint ; ("component"|"fully-qualified"|"minimally-qualified"|"unqualified") # Emoji "E"Version Emoji name`
-    pub fn expand_descriptions_from_test_data<I: BufRead>(&mut self, reader: I) -> Result<(), Error> {
+    pub fn expand_descriptions_from_test_data<I: BufRead>(&mut self, reader: I) {
         lazy_static! {
             static ref EMOJI_TEST_REGEX: Regex = Regex::new(&format!(r"^{}\s*;\s*{}\s*#\s*{}$",
                                                EMOJI_SEQUENCE_SPACE_REGEX,
@@ -416,7 +413,6 @@ impl EmojiTable {
                 }
             }
         };
-        Ok(())
     }
 
     #[cfg(feature = "online")]
@@ -481,7 +477,7 @@ impl EmojiTable {
     #[cfg(feature = "online")]
     fn expand_data_online(&mut self, client: &reqwest::blocking::Client, version: (u32, u32), file: &'static str) -> Result<(), ExpansionError> {
         let reader = Self::get_data_file_online(client, version, file)?;
-        self.expand(reader)?;
+        self.expand(reader);
         Ok(())
     }
 
@@ -489,7 +485,7 @@ impl EmojiTable {
     #[inline]
     fn get_data_file_online(client: &reqwest::blocking::Client, version: (u32, u32), file: &'static str) -> Result<std::io::Cursor<bytes::Bytes>, reqwest::Error> {
         // Check if we can return the file from the cache already
-        let cache = TABLE_CACHE.read();
+        let cache = (&*TABLE_CACHE as &TableCache).read();
         if let Ok(cache) = cache {
             if let Some(cached_files) = cache.get(&version) {
                 if let Some(cached) = cached_files.get(file) {
@@ -501,7 +497,7 @@ impl EmojiTable {
         let bytes = request?.bytes()?;
 
         // Insert data into the cache
-        let cache = TABLE_CACHE.write();
+        let cache = (&*TABLE_CACHE as &TableCache).write();
         if let Ok(mut cache) = cache {
             if let Some(cached_files) = cache.get_mut(&version) {
                 // We need to check again here, since we didn't hold the Lock for some time
@@ -522,7 +518,8 @@ impl EmojiTable {
     #[cfg(feature = "online")]
     fn expand_descriptions_from_test_online(&mut self, client: &reqwest::blocking::Client, version: (u32, u32)) -> Result<(), ExpansionError> {
         let reader = Self::get_data_file_online(client, version, Self::EMOJI_TEST)?;
-        self.expand_descriptions_from_test_data(reader).map_err(|err| err.into())
+        self.expand_descriptions_from_test_data(reader);
+        Ok(())
     }
 
     /// A simple helper function to build the URLs for the different files.
@@ -619,6 +616,15 @@ impl EmojiTable {
     }
 }
 
+fn insert_in_order<T>(existing: &mut Vec<T>, new: Option<T>)
+    where T: Eq + Ord {
+    if let Some(new) = new {
+        if !existing.contains(&new) {
+            existing.insert(existing.binary_search(&new).unwrap_err(), new);
+        }
+    }
+}
+
 impl Default for EmojiTable {
     fn default() -> Self {
         EmojiTable::new()
@@ -647,10 +653,12 @@ impl AsRef<HashMap<EmojiTableKey, EmojiTableEntry>> for EmojiTable {
     }
 }
 
+type TableCache = RwLock<HashMap<(u32, u32), HashMap<String, bytes::Bytes>>>;
+
 // 14 Unicode/emoji main versions * 2 minor versions ~= 32 versions
 #[cfg(feature = "online")]
 lazy_static! {
-    static ref TABLE_CACHE: RwLock<HashMap<(u32, u32), HashMap<String, bytes::Bytes>>> =
+    static ref TABLE_CACHE: TableCache =
         RwLock::new(HashMap::with_capacity(32));
 }
 
@@ -660,56 +668,6 @@ lazy_static! {
 pub enum EmojiTableError {
     /// Indicates that an emoji with the given sequence is not in the table
     KeyNotFound(EmojiTableKey),
-}
-
-/// The status of an emoji according to `emoji-test.txt`
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum EmojiStatus {
-    /// ? TODO: Find out, what this is
-    Component,
-    /// It is a regular, RGI emoji
-    FullyQualified,
-    /// ? TODO: Find out, what this is
-    MinimallyQualified,
-    /// Not actually displayed as an emoji/not RGI
-    Unqualified
-}
-
-impl EmojiStatus {
-    pub fn is_emoji(&self) -> bool {
-        matches!(self, Self::Component | Self::FullyQualified | Self::MinimallyQualified)
-    }
-}
-
-impl Default for EmojiStatus {
-    fn default() -> Self {
-        Self::Unqualified
-    }
-}
-
-impl ToString for EmojiStatus {
-    fn to_string(&self) -> String {
-        match self {
-            Self::Component => "component".to_string(),
-            Self::Unqualified => "unqualified".to_string(),
-            Self::FullyQualified => "fully-qualified".to_string(),
-            Self::MinimallyQualified => "minimally-qualified".to_string()
-        }
-    }
-}
-
-impl FromStr for EmojiStatus {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "component" => Ok(Self::Component),
-            "unqualified" => Ok(Self::Unqualified),
-            "fully-qualified" => Ok(Self::FullyQualified),
-            "minimally-qualified" => Ok(Self::MinimallyQualified),
-            other => Err(other.to_string())
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -769,3 +727,4 @@ fn test_online() {
         vec![EmojiKind::Emoji, EmojiKind::ModifierBase, EmojiKind::EmojiPresentation, EmojiKind::Other(String::from("extended pictographic"))]
     );
 }
+

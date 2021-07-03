@@ -34,19 +34,20 @@
 
 use crate::emoji_tables::EmojiTable;
 use std::collections::{HashSet, HashMap};
-use crate::emoji::Emoji;
-use std::path::Path;
-use std::iter::FromIterator;
+use crate::emojis::emoji::{Emoji, EmojiError};
+use std::path::{Path, PathBuf};
+use std::iter::{FromIterator, Map};
 use rayon::iter::{FromParallelIterator, IntoParallelIterator, ParallelIterator, ParallelExtend};
-use itertools::Itertools;
+use itertools::{Itertools, Either};
 use std::hash::Hash;
 use std::cmp::max;
-use crate::packs::pack_files::EmojiPackFile;
 use std::sync::Mutex;
 use std::cell::Cell;
-use crate::loadable::{LoadingError, Loadable};
-use std::convert::{TryFrom, TryInto};
-use std::io::Read;
+use std::convert::TryFrom;
+use std::io::{Read, BufReader};
+use crate::loadables::sources::LoadableSource;
+use serde::Deserialize;
+use crate::loadables::NoError;
 
 #[derive(Debug, Default)]
 pub struct EmojiPack {
@@ -57,17 +58,20 @@ pub struct EmojiPack {
     pub config: HashMap<String, String>
 }
 
+#[derive(Deserialize, Debug)]
+pub struct EmojiPackPrototype {
+    name: Option<String>,
+    unicode_version: Option<(u32, u32)>,
+    table_files: Option<Vec<PathBuf>>,
+    test_files: Option<Vec<PathBuf>>,
+    emoji_dirs: Option<Vec<PathBuf>>,
+    flag_dirs: Option<Vec<PathBuf>>,
+    aliases: Option<PathBuf>,
+    config: Option<HashMap<String, String>>,
+    offline: Option<bool>,
+}
+
 impl EmojiPack {
-    pub fn from_file_anyway(path: &Path) -> Result<Self, (Option<Self>, LoadingError)> {
-        match EmojiPackFile::from_file(path)
-            .map(|pack_file| pack_file.load()) {
-
-            Ok(Ok(pack)) => Ok(pack),
-            Ok(Err((pack, err))) => Err((Some(pack), err)),
-            Err(err) => Err((None, err))
-        }
-    }
-
     pub fn emojis(&self) -> &HashSet<Emoji> {
         &self.emojis
     }
@@ -147,36 +151,137 @@ impl EmojiPack {
     }
 }
 
-impl Loadable for EmojiPack {
-    fn from_file(file: &Path) -> Result<Self, LoadingError> {
-        EmojiPackFile::from_file(file).try_into()
-    }
+macro_rules! print_errors {
+    ($($errors:ident),*) => {
+        $(
+            $errors.iter()
+                .for_each(|error| error!("{:?}", error));
+        )*
 
-    fn from_reader<R>(reader: R) -> Result<Self, LoadingError> where R: Read {
-        EmojiPackFile::from_reader(reader).try_into()
+    };
+}
+
+
+impl<S> TryFrom<(EmojiPackPrototype, S)> for EmojiPack
+    where S: LoadableSource {
+    type Error = NoError;
+
+    fn try_from((prototype, source): (EmojiPackPrototype, S)) -> Result<Self, Self::Error> {
+        let table = load_tables(
+            prototype.table_files.unwrap_or_default(),
+            prototype.test_files.unwrap_or_default(),
+            &source,
+            prototype.offline,
+            prototype.unicode_version
+        ).unwrap_or_default();
+        let (emojis, emoji_errors, source_errors) = load_emojis_from_source(&source, prototype.emoji_dirs.unwrap_or_default(), Some(&table), false);
+        let (flags, flag_errors, flag_source_errors) = load_emojis_from_source(&source, prototype.flag_dirs.unwrap_or_default(), Some(&table), true);
+
+        let emojis: HashSet<_> = emojis.into_iter().chain(flags.into_iter()).collect();
+
+        let config = prototype.config.unwrap_or_default();
+
+        let unicode_version = prototype.unicode_version;
+        let name = prototype.name;
+
+        // TODO: Error handling?
+        print_errors!(source_errors, flag_source_errors, emoji_errors, flag_errors);
+
+        Ok(Self {
+            name,
+            unicode_version,
+            table,
+            emojis,
+            config
+        })
     }
 }
 
-impl TryFrom<EmojiPackFile> for EmojiPack {
-    type Error = LoadingError;
+fn load_emojis_from_source<S>(
+    source: &S,
+    emoji_dirs: Vec<PathBuf>,
+    table: Option<&EmojiTable>,
+    flags: bool) -> (Vec<Emoji>, Vec<EmojiError>, Vec<S::Error>)
+    where S: LoadableSource {
+    // Doing this all in one step is way to complicated...
+    let (emoji_dirs, source_errors): (Vec<_>, Vec<_>) = emoji_dirs.iter()
+        .map(|emoji_dir| source.request_source(emoji_dir))
+        .map(|emoji_dir| emoji_dir.map(|emoji_dir| emoji_dir.contents()))
+        .partition_map(|result| match result {
+            Ok(Ok(emoji_dir)) => Either::Left(emoji_dir),
+            Ok(Err(error)) => Either::Right(error),
+            Err(error) => Either::Right(error)
+        });
 
-    fn try_from(pack_file: EmojiPackFile) -> Result<Self, Self::Error> {
-        match pack_file.load() {
-            Err((_pack, err)) => Err(err),
-            Ok(pack) => Ok(pack),
-        }
-    }
+    let (emojis, emoji_errors) = emoji_dirs.iter()
+        .map(|emojis| emojis.into_iter())
+        .map(|emojis| emojis.filter_map(|emoji_source|
+            emoji_source.root_file()
+        ))
+        .flatten()
+        .map(|emoji| Emoji::from_path(
+            emoji.to_path_buf(),
+            table,
+            flags
+        ))
+        .partition_map(|emoji_result| match emoji_result {
+            Ok(emoji) => Either::Left(emoji),
+            Err(error) => Either::Right(error)
+        });
+    (emojis, emoji_errors, source_errors)
 }
 
-impl TryFrom<Result<EmojiPackFile, LoadingError>> for EmojiPack {
-    type Error = LoadingError;
+fn load_tables<S>(table_files: Vec<PathBuf>,
+                  test_files: Vec<PathBuf>,
+                  source: &S,
+                  offline: Option<bool>,
+                  unicode_version: Option<(u32, u32)>)
+    -> Result<EmojiTable, (Vec<S::Error>, Option<crate::emoji_tables::ExpansionError>)>
+    where S: LoadableSource {
 
-    fn try_from(pack_file: Result<EmojiPackFile, LoadingError>) -> Result<Self, Self::Error> {
-        match pack_file.map(Self::try_from) {
-            Ok(Ok(pack)) => Ok(pack),
-            Ok(Err(err)) => Err(err),
-            Err(err) => Err(err)
+    let mut table = EmojiTable::new();
+
+    let table_paths = table_files.iter()
+        .map(|path| (false, path));
+    let test_paths = test_files.iter()
+        .map(|path| (true, path));
+
+    // TODO: Parallelize
+    // When compiling this without the online-feature, the mut becomes unused.
+    // It would however be overly complicated to conditionally remove it here
+    #[allow(unused_mut)]
+        let mut read_errors: Vec<_> = table_paths.chain(test_paths)
+        .map(|(is_test, path)| (is_test, source.request(path)))
+        .map(|(is_test, reader)| (is_test, reader.map(BufReader::new)))
+        .filter_map(|(is_test, reader)| match reader {
+            Ok(reader) => {
+                    if is_test {
+                        table.expand_descriptions_from_test_data(reader);
+                    } else {
+                        table.expand(reader);
+                    }
+                    None
+                },
+            Err(error) => Some(error)
+        })
+        .collect();
+
+    let mut expansion_error = None;
+
+    #[cfg(feature = "online")]
+    if !offline.unwrap_or(false) {
+        if let Some(unicode_version) = unicode_version {
+            let expansion_result = table.expand_all_online(unicode_version);
+            if let Err(error) = expansion_result {
+                expansion_error = Some(error);
+            }
         }
+    }
+
+    if !read_errors.is_empty() || expansion_error.is_some() {
+        Err((read_errors, expansion_error))
+    } else {
+        Ok(table)
     }
 }
 

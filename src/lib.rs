@@ -26,8 +26,6 @@ pub mod builder;
 pub mod builders;
 /// A helper module to detect file changes based on their SHA256 hashes
 pub mod changes;
-/// Handling for single emojis
-pub mod emoji;
 /// Tables that contain metadata about emojis, like their kind and name
 pub mod emoji_tables;
 /// [emoji_processor::EmojiProcessor] is a trait for transformation functions that can work on e.g.
@@ -39,8 +37,9 @@ pub mod emoji_processor;
 pub mod deriving_emoji_processor;
 /// Concrete emoji processors
 pub mod emoji_processors;
+pub mod emojis;
 pub mod packs;
-pub mod loadable;
+pub mod loadables;
 pub mod configs;
 
 

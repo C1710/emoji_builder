@@ -23,7 +23,7 @@ use crate::builders::blobmoji::{CHARACTER_WIDTH, RENDER_AND_CHARACTER_HEIGHT, Bl
 use oxipng::{PngResult, optimize_from_memory};
 use oxipng::internal_tests::Headers::Safe;
 use std::path::{Path, PathBuf};
-use crate::emoji::Emoji;
+use crate::emojis::emoji::Emoji;
 use std::fs::File;
 use std::io::Write;
 

@@ -1,14 +1,16 @@
-use crate::packs::pack::EmojiPack;
+use crate::packs::pack::{EmojiPack, EmojiPackPrototype};
 use std::path::PathBuf;
-use crate::loadable::Loadable;
-use crate::emoji::Emoji;
+use crate::emojis::emoji::Emoji;
+use crate::loadables::loadable::Loadable;
+use crate::loadables::sources::fs_source::FsSource;
 
 const TEST_PACK: &str = "test_files/packs/basic_pack/pack.json";
 
 #[test]
 fn test_load_pack() {
     let path = PathBuf::from(TEST_PACK);
-    let pack = EmojiPack::from_file(&path).unwrap();
+    let source = FsSource::new(path).unwrap();
+    let pack = EmojiPack::load(source).unwrap();
 
     assert_eq!(pack.name.as_ref().unwrap(), "Test-Pack");
     assert_eq!(pack.table.len(), 1);

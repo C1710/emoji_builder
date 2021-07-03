@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use crate::builder::EmojiBuilder;
 use crate::builders::blobmoji::Blobmoji;
 use crate::changes::FileHashes;
-use crate::emoji::Emoji;
+use crate::emojis::emoji::Emoji;
 use crate::emoji_tables::EmojiTable;
 use crate::tests::integration::builder::DummyBuilder;
 
@@ -137,8 +137,8 @@ fn test_blobmoji() {
 }
 
 fn check_hashes(actual: &Path, expected: &Path) {
-    let actual = FileHashes::from_path(actual).unwrap();
-    let expected = FileHashes::from_path(expected).unwrap();
+    let actual = FileHashes::from_path(actual.to_path_buf()).unwrap();
+    let expected = FileHashes::from_path(expected.to_path_buf()).unwrap();
     let actual: HashMap<_, _> = actual.into();
     let expected: HashMap<_, _> = expected.into();
     assert_eq!(actual, expected);

@@ -19,7 +19,7 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use crate::changes::FileHashes;
-use crate::emoji::Emoji;
+use crate::emojis::emoji::Emoji;
 
 const SVG_FILE: &str = "test_files/svg/emoji_u1f9a6.svg";
 const HASH_FILE: &str = "test_files/hash.csv";
@@ -27,7 +27,7 @@ const HASH_FILE: &str = "test_files/hash.csv";
 #[test]
 fn test_hashing() {
     let temp_file = tempfile::tempfile().unwrap();
-    let mut empty_hashes = FileHashes::from_reader(temp_file).unwrap();
+    let mut empty_hashes = FileHashes::from_reader(temp_file);
 
     // Check that it is *really* empty
     assert!(empty_hashes.is_empty());
@@ -54,7 +54,7 @@ fn test_hashing() {
     }
 
     // Test the loading mechanism
-    let correct_hashes = FileHashes::from_path(&correct_path).unwrap();
+    let correct_hashes = FileHashes::from_path(correct_path).unwrap();
     assert_eq!(correct_hashes.len(), 1);
     assert!(correct_hashes.check(&emoji).unwrap());
 }

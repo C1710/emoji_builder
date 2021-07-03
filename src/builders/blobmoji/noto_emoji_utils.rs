@@ -17,7 +17,7 @@
 
 use std::path::{PathBuf, Path};
 use std::collections::{HashMap, HashSet};
-use crate::emoji::Emoji;
+use crate::emojis::emoji::Emoji;
 use crate::builders;
 use crate::builder::EmojiBuilder;
 use pyo3::{PyResult, Python, IntoPy};

@@ -18,7 +18,7 @@ use std::fmt::Debug;
 
 use clap::{Arg, ArgMatches};
 
-use crate::emoji::Emoji;
+use crate::emojis::emoji::Emoji;
 
 /// A trait that is capable of doing postprocessing for emojis.
 /// This might be e.g. a PNG compressor or a masking system for flags (which might then work on the SVGs).

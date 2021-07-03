@@ -25,7 +25,7 @@ use rctree::NodeEdge;
 use usvg::{Color, Paint, Tree};
 use usvg::NodeKind::{LinearGradient, Path, RadialGradient};
 
-use crate::emoji::Emoji;
+use crate::emojis::emoji::Emoji;
 use crate::emoji_processor::EmojiProcessor;
 
 /// Stores the configuration (that is, the palette) for a color-reducing/aligning emoji processor

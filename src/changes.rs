@@ -32,11 +32,16 @@ use digest::generic_array::GenericArray;
 use sha2::{Digest, Sha256};
 
 use crate::changes::CheckError::{Io, NoFileSpecified};
-use crate::emoji::Emoji;
+use crate::emojis::emoji::Emoji;
 use crate::changes;
-use crate::loadable::{Loadable, LoadingError};
+use crate::loadables::loadable::{Loadable, LoadablePrototype};
+use crate::loadables::sources::LoadableSource;
+use crate::loadables::prototype_error::PrototypeLoadingError;
+use crate::loadables::NoError;
+use crate::loadables::sources::fs_source::FsSource;
 
 /// A simple struct that maps code sequences to file hashes
+#[derive(Debug)]
 pub struct FileHashes(HashMap<Vec<u32>, Vec<u8>>);
 
 #[derive(Debug)]
@@ -52,16 +57,22 @@ impl FileHashes {
     fn from_csv_reader<R: io::Read>(reader: &mut csv::Reader<R>) -> changes::FileHashes {
         let records = reader.records();
         let entries: Vec<(Vec<u32>, Vec<u8>)> = records
-            .filter(std::result::Result::is_ok)
-            .map(std::result::Result::unwrap)
+            .filter_map(std::result::Result::ok)
             .filter(|record| record.len() >= 2)
             .map(|record| (parse_hex(&record[0]), hex::decode(&record[1])))
-            .filter(|(_, hash)| hash.is_ok())
-            .map(|(sequence, hash)| (sequence, hash.unwrap()))
+            .filter_map(|(sequence, hash)| Some(sequence).zip(hash.ok()))
             .collect();
         let mut table = HashMap::with_capacity(entries.len());
         table.extend(entries);
         FileHashes(table)
+    }
+
+    #[deprecated]
+    pub fn from_reader<R: std::io::Read>(reader: R) -> Self {
+        Self::from_csv_reader(&mut csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_reader(reader)
+        )
     }
 
     /// Checks whether the hash of the file is still the same as the one in the table.
@@ -174,14 +185,33 @@ impl FileHashes {
         self.0.contains_key(emoji.as_ref())
     }
 
+    #[deprecated]
+    pub fn from_path(path: PathBuf) -> Result<Self, std::io::Error> {
+        let source = FsSource::new(path.clone())
+            .unwrap_or_else(|| FsSource::new_with_dir(PathBuf::new(), Some(path)));
+        Self::load_prototype(&source)
+            .map_err(|error|
+                match error {
+                    PrototypeLoadingError::Source(error) => error,
+                    PrototypeLoadingError::Prototype(error) => error
+                }
+            )
+    }
+
     /// Create a new, empty changelist
     pub fn new() -> FileHashes {
         Self::default()
     }
 }
 
-impl Loadable for FileHashes {
-    fn from_reader<R>(reader: R) -> Result<Self, LoadingError> where R: Read {
+impl<S> LoadablePrototype<S> for FileHashes
+    where S: LoadableSource {
+    type Error = std::io::Error;
+
+    fn load_prototype(source: &S) -> Result<Self, PrototypeLoadingError<Self, S>> {
+        let reader = source.request_root_file().map_err(|error|
+            PrototypeLoadingError::Source(error)
+        )?;
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(false)
             .from_reader(reader);

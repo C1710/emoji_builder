@@ -20,10 +20,12 @@ use crate::packs::pack::EmojiPack;
 use std::path::{PathBuf, Path};
 use clap::ArgMatches;
 use crate::builder::EmojiBuilder;
-use crate::loadable::{Loadable, LoadingError};
-use std::io::Read;
-use crate::configs::config_file::PackConfigFile;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
+use serde::Deserialize;
+use crate::loadables::sources::LoadableSource;
+use crate::loadables::loadable::Loadable;
+use itertools::{Itertools, Either};
+use crate::loadables::NoError;
 
 pub struct PackConfig {
     pub output_path: Option<PathBuf>,
@@ -31,6 +33,15 @@ pub struct PackConfig {
     pub build_path: Option<PathBuf>,
     pub packs: Vec<EmojiPack>,
     pub config: HashMap<String, String>
+}
+
+#[derive(Deserialize, Clone, Debug)]
+struct PackConfigPrototype {
+    output_path: Option<PathBuf>,
+    output_name: Option<String>,
+    build_path: Option<PathBuf>,
+    packs: Vec<PathBuf>,
+    config: HashMap<String, String>
 }
 
 impl PackConfig {
@@ -77,36 +88,53 @@ impl PackConfig {
     }
 }
 
-impl TryFrom<PackConfigFile> for PackConfig {
-    type Error = LoadingError;
+impl<S> TryFrom<(PackConfigPrototype, S)> for PackConfig
+    where S: LoadableSource {
+    type Error = NoError;
 
-    fn try_from(config_file: PackConfigFile) -> Result<Self, Self::Error> {
-        match config_file.load() {
-            Ok(config) => Ok(config),
-            Err((_, err)) => Err(err)
-        }
+    fn try_from((prototype, source): (PackConfigPrototype, S)) -> Result<Self, Self::Error> {
+        let output_path = prototype.output_path.map(|output_path| relate_path(
+                source.root(),
+                output_path.as_path())
+        );
+        let output_name = prototype.output_name;
+        let build_path = prototype.build_path.map(|build_path| relate_path(
+            source.root(),
+            build_path.as_path()
+        ));
+        let (packs, errors): (Vec<_>, Vec<_>) = prototype.packs
+            .iter()
+            .filter_map(|pack_path| source.request_source(pack_path).ok())
+            .map(|pack_source| EmojiPack::load(pack_source))
+            .partition_map(|pack_result| match pack_result {
+                Ok(pack) => Either::Left(pack),
+                Err(error) => Either::Right(error)
+            });
+        let config = prototype.config;
+
+        // TODO: Error handling
+        errors.iter()
+            .for_each(|error| error!("{:?}", error));
+
+        Ok(Self {
+            output_path,
+            output_name,
+            build_path,
+            packs,
+            config
+        })
     }
 }
 
-impl TryFrom<Result<PackConfigFile, LoadingError>> for PackConfig {
-    type Error = LoadingError;
-
-    fn try_from(config_file: Result<PackConfigFile, LoadingError>) -> Result<Self, Self::Error> {
-        match config_file.map(Self::try_from) {
-            Ok(Ok(config)) => Ok(config),
-            Ok(Err(err)) => Err(err),
-            Err(err) => Err(err)
-        }
-    }
-}
-
-impl Loadable for PackConfig {
-    fn from_file(file: &Path) -> Result<Self, LoadingError> {
-        PackConfigFile::from_file(file).try_into()
-    }
-
-    fn from_reader<R>(reader: R) -> Result<Self, LoadingError>
-        where R: Read {
-        PackConfigFile::from_reader(reader).try_into()
+fn relate_path(base_dir: &Path, target_path: &Path) -> PathBuf {
+    // We use has_root here instead of is_absolute since otherwise
+    // \file would be equal to .\file on Windows, which does not seem to be the usual expected
+    // behavior.
+    if !target_path.has_root() {
+        // In this case, we assume, the path is relative in which case, we'll append it to the
+        // root_dir and canonicalize it
+        base_dir.join(&target_path)
+    } else {
+        target_path.to_path_buf()
     }
 }

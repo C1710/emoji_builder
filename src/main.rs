@@ -38,11 +38,13 @@ use yaml_rust::Yaml;
 
 use emoji_builder::builder::EmojiBuilder;
 use emoji_builder::builders::blobmoji::Blobmoji;
-use emoji_builder::emoji::Emoji;
+use emoji_builder::emojis::emoji::Emoji;
 use emoji_builder::emoji_tables::EmojiTable;
 use std::fs::create_dir_all;
 use std::io::{BufReader, Write};
 use std::process::exit;
+use emoji_builder::changes::FileHashes;
+use std::convert::TryInto;
 
 const LICENSES: include_dir::Dir = include_dir!("licenses");
 
@@ -109,12 +111,8 @@ fn parse_emojis(args: &BuilderArguments) -> Vec<Emoji> {
         let reader = std::fs::File::open(emoji_test).map(BufReader::new);
         if let Ok(reader) = reader {
             let mut table = table.unwrap_or_default();
-            table.expand_descriptions_from_test_data(reader)
-                .map(|_| table)
-                .map_err(|err|
-                    error!("Error in parsing emoji-test.txt: {}", err)
-                )
-                .ok()
+            table.expand_descriptions_from_test_data(reader);
+            Some(table)
         } else {
             table
         }
@@ -248,6 +246,8 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
 
     let matches: ArgMatches = app
         .get_matches();
+
+    let hashes = FileHashes::new();
 
     stderrlog::new()
         .module(module_path!())

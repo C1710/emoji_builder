@@ -21,7 +21,7 @@ use clap::{App, ArgMatches};
 
 use crate::builder::EmojiBuilder;
 use crate::changes::{CheckError, FileHashes};
-use crate::emoji::Emoji;
+use crate::emojis::emoji::Emoji;
 use crate::tests::integration::builder::DummyError::{CsvError, IoError};
 
 /// A very simple implementation of the `EmojiBuilder` trait
