@@ -47,7 +47,7 @@ impl LoadableSource for FsSource {
                 } else {
                     Self {
                         base_dir: self.base_dir.clone(),
-                        base_file: Some(entry)
+                        base_file: Some(strip_prefix_if_possible(entry, &self.base_dir))
                     }
                 })
                 .collect_vec()
@@ -72,6 +72,8 @@ impl FsSource {
 
     pub fn new(base_file: PathBuf) -> Option<Self> {
         let base_dir = base_file.parent()?.to_path_buf();
+        // As we will use paths relative to the base_dir, we'll make the base_file relative to it
+        let base_file = strip_prefix_if_possible(base_file, &base_dir);
         Some(
             Self {
                 base_dir,
@@ -81,9 +83,17 @@ impl FsSource {
     }
 
     pub fn new_with_dir(base_dir: PathBuf, base_file: Option<PathBuf>) -> Self {
+        // As we will use paths relative to the base_dir, we'll make the base_file relative to it
+        let base_file = base_file.map(|base_file| strip_prefix_if_possible(base_file, &base_dir));
         Self {
             base_dir,
             base_file
         }
     }
+}
+
+fn strip_prefix_if_possible(base_file: PathBuf, prefix: &Path) -> PathBuf {
+    base_file.strip_prefix(&prefix)
+        .map(|path| path.to_path_buf())
+        .unwrap_or(base_file)
 }

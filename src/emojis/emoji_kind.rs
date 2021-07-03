@@ -27,6 +27,7 @@ pub enum EmojiKind {
     EmojiFlagSequence,
     /// An emoji with a modifier (e.g. skin tone)
     EmojiModifierSequence,
+    ExtendedPictographic,
     // TODO: delete.
     /// Something else, that is not mapped here
     Other(String),
@@ -50,6 +51,7 @@ impl FromStr for EmojiKind {
             "emoji keycap sequence" => Ok(EmojiKind::EmojiKeycapSequence),
             "emoji flag sequence" => Ok(EmojiKind::EmojiFlagSequence),
             "emoji modifier sequence" => Ok(EmojiKind::EmojiModifierSequence),
+            "extended pictographic" => Ok(EmojiKind::ExtendedPictographic),
             _ => Err(UnknownEmojiKind(EmojiKind::Other(kind.to_owned()))),
         }
     }
@@ -60,8 +62,8 @@ impl FromStr for EmojiKind {
 /// If you don't care about that, you can simply ignore it.
 /// # Examples
 /// ```
-/// use emoji_builder::emojis::emoji::EmojiKind;
 /// use std::str::FromStr;
+/// use emoji_builder::emojis::emoji_kind::EmojiKind;
 ///
 /// let kind = EmojiKind::from_str(":P");
 /// assert!(kind.is_err());
@@ -93,7 +95,8 @@ impl ToString for EmojiKind {
             EmojiKind::EmojiComponent => {"Emoji_Component".to_string()}
             EmojiKind::EmojiKeycapSequence => {"Emoji_Keycap_Sequence".to_string()}
             EmojiKind::EmojiFlagSequence => {"Emoji_Flag_Sequence".to_string()}
-            EmojiKind::EmojiModifierSequence => {"Emoji_Modifier_Sequence".to_string()}
+            EmojiKind::EmojiModifierSequence => {"Emoji_Modifier_Sequence".to_string()},
+            EmojiKind::ExtendedPictographic => {"Extended_Pictographic".to_string()},
             EmojiKind::Other(name) => {name.replace(" ", "_")}
         }
     }
@@ -103,31 +106,34 @@ impl EmojiKind {
     const DELIMITER: &'static str = "[_ -]";
 
     fn regex_impl() -> regex::Regex {
-        let sequences = vec![
+        let sequences_prefix = vec![
             "Flag",
             "ZWJ",
             "Keycap",
             "Modifier"
         ].iter().join("|");
+
         let sequences = format!(r"(({sequence_prefix}){delim})?Sequence",
-            sequence_prefix = sequences,
+            sequence_prefix = sequences_prefix,
             delim = EmojiKind::DELIMITER
         );
+
         let postfixes = vec![
-            sequences,
-            format!("Modifier{delim}Base", delim = EmojiKind::DELIMITER),
+            format!("({})", sequences),
+            format!("(Modifier({delim}Base)?)", delim = EmojiKind::DELIMITER),
             String::from("Component"),
-            String::from("Presentation")
+            String::from("Presentation"),
+            format!("extended{delim}pictographic", delim = EmojiKind::DELIMITER)
         ].iter().join("|");
 
-        let postfixes_with_or_without_emoji = format!(r"(Emoji{delim})?{postfixes}",
+        let advanced_emojis = format!(r"(Emoji{delim})?({postfixes})",
             delim = EmojiKind::DELIMITER,
             postfixes = postfixes
         );
 
-        let regex = format!(r"(?i)(RGI{delim})?({postfixes}|(Basic{delim})?Emoji)",
-            delim=EmojiKind::DELIMITER,
-            postfixes = postfixes_with_or_without_emoji
+        let regex = format!(r"(?i)(RGI{delim})?(({advanced_emojis})|((Basic{delim})?Emoji))",
+            delim = EmojiKind::DELIMITER,
+            advanced_emojis = advanced_emojis
         );
 
         regex::Regex::new(&regex).unwrap()

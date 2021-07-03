@@ -187,7 +187,10 @@ impl FileHashes {
     #[deprecated]
     pub fn from_path(path: PathBuf) -> Result<Self, std::io::Error> {
         let source = FsSource::new(path.clone())
-            .unwrap_or_else(|| FsSource::new_with_dir(PathBuf::new(), Some(path)));
+            .unwrap_or_else(|| {
+                eprintln!("No parent dir found for {:?}", &path);
+                FsSource::new_with_dir(PathBuf::new(), Some(path))
+            });
         Self::load_prototype(&source)
             .map_err(|error|
                 match error {

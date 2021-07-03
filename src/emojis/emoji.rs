@@ -72,9 +72,11 @@ impl Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emojis::emoji::{Emoji, EmojiKind};
+    /// use emoji_builder::emojis::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji_kind::EmojiKind;
     /// use std::collections::HashMap;
-    /// use emoji_builder::emoji_tables::{EmojiTable };
+    /// use emoji_builder::emoji_tables::EmojiTable;
+    /// use emoji_builder::emojis::emoji_status::EmojiStatus;
     ///
     /// let mut table = EmojiTable::new();
     /// table.insert(vec![0x1f914 as u32], (vec![EmojiKind::Emoji], Some(String::from("Thinking Face")), vec![EmojiStatus::FullyQualified]));
@@ -323,9 +325,10 @@ impl Emoji {
     /// # Example
     /// ```
     /// use std::collections::HashMap;
-    /// use emoji_builder::emojis::emoji::{EmojiKind, Emoji};
+    /// use emoji_builder::emojis::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji_kind::EmojiKind;
     /// use emoji_builder::emoji_tables::EmojiTable;
-    /// use emoji_builder::emoji_tables::EmojiStatus;
+    /// use emoji_builder::emojis::emoji_status::EmojiStatus;
     ///
     /// let mut table = EmojiTable::new();
     /// let sequence = vec![0x1f914];
@@ -364,7 +367,8 @@ impl Emoji {
     /// - `EmojiKeycapSequence`
     /// # Examples
     /// ```
-    /// use emoji_builder::emojis::emoji::{Emoji,EmojiKind};
+    /// use emoji_builder::emojis::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji_kind::EmojiKind;
     ///
     /// let emoji = Emoji::from(vec![0x1f914]);
     ///
@@ -374,7 +378,8 @@ impl Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emojis::emoji::{Emoji, EmojiKind};
+    /// use emoji_builder::emojis::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji_kind::EmojiKind;
     ///
     /// let emoji = Emoji::from(vec![0x1f914, 0x200d, 0x42]);
     ///
@@ -384,7 +389,8 @@ impl Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emojis::emoji::{Emoji, EmojiKind};
+    /// use emoji_builder::emojis::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji_kind::EmojiKind;
     ///
     /// let emoji = Emoji::from(vec![0x1f914, 0x42]);
     ///
@@ -394,7 +400,8 @@ impl Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emojis::emoji::{Emoji, EmojiKind};
+    /// use emoji_builder::emojis::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji_kind::EmojiKind;
     ///
     /// let emoji = Emoji::from(vec![]);
     ///
@@ -404,8 +411,9 @@ impl Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emojis::emoji::{Emoji, EmojiKind};
-    /// use emoji_builder::emojis::emoji::EmojiKind::{EmojiSequence, EmojiFlagSequence};
+    /// use emoji_builder::emojis::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji_kind::EmojiKind;
+    /// use emoji_builder::emojis::emoji_kind::EmojiKind::{EmojiSequence, EmojiFlagSequence};
     ///
     /// let emoji = Emoji::from_flag("DE", None).unwrap();
     ///
@@ -415,8 +423,9 @@ impl Emoji {
     /// ```
     ///
     /// ```
-    /// use emoji_builder::emojis::emoji::{Emoji, EmojiKind};
-    /// use emoji_builder::emojis::emoji::EmojiKind::{EmojiSequence, EmojiKeycapSequence};
+    /// use emoji_builder::emojis::emoji::Emoji;
+    /// use emoji_builder::emojis::emoji_kind::EmojiKind::{EmojiSequence, EmojiKeycapSequence};
+    /// use emoji_builder::emojis::emoji_kind::EmojiKind;
     ///
     /// let emoji = Emoji::from(vec![0x2a, 0xfe0f, 0x20e3]);
     ///
@@ -453,8 +462,10 @@ impl Emoji {
     /// # Example
     /// ```
     /// use std::collections::HashMap;
-    /// use emoji_builder::emojis::emoji::{EmojiKind, Emoji};
-    /// use emoji_builder::emoji_tables::{EmojiTable, EmojiStatus};
+    /// use emoji_builder::emojis::emoji::Emoji;
+    /// use emoji_builder::emoji_tables::EmojiTable;
+    /// use emoji_builder::emojis::emoji_kind::EmojiKind;
+    /// use emoji_builder::emojis::emoji_status::EmojiStatus;
     ///
     /// let mut table = EmojiTable::new();
     /// let sequence = vec![0x1f914];

@@ -26,8 +26,25 @@ use crate::emojis::emoji_kind::EmojiKind::EmojiZwjSequence;
 const SVG_PATH: &str = "test_files/svg";
 const TABLES_PATH: &str = "test_files/tables";
 
-// data - data-duplicates + zwj sequences w/o fe0f + 2*(zwj sequences with fe0f)
-const TABLE_ENTRIES: usize = 76 - 21 + 1 + 2 * (9);
+const EMOJI_DATA_TXT: usize =
+    // "Normal" emojis
+      (3 + 1 + 6 + 8 + 6)
+    // Emoji_Presentation
+    + (1 + 6 + 8 + 6)
+    // Both/duplicates
+    - (1 + 6 + 8 + 6)
+    // Emoji_Modifier
+    + 5
+    // Emoji_Component
+    + 26;
+
+const EMOJI_ZWJ_SEQUENCES: usize =
+    // Family
+      9
+    // Other
+    + 1;
+
+const TABLE_ENTRIES: usize = EMOJI_DATA_TXT + EMOJI_ZWJ_SEQUENCES;
 
 // The number of files/entries expected
 const EMOJIS: usize = 7;
@@ -47,6 +64,8 @@ fn emoji_build() {
     assert_eq!(table_paths.len(), TABLES);
 
     let table = EmojiTable::from_files(&table_paths).unwrap();
+
+    println!("{:?}", table);
 
     assert_eq!(table.len(), TABLE_ENTRIES);
 
@@ -71,7 +90,7 @@ fn emoji_build() {
     assert!(emojis.is_superset(&expected_emojis));
 
     let rainbow = Emoji {
-        sequence: vec![0x1f3f3, 0x200d, 0x1f308],
+        sequence: vec![0x1f3f3, 0xfe0f, 0x200d, 0x1f308],
         name: Some(String::from("rainbow flag")),
         kinds: Some(vec![EmojiZwjSequence]),
         svg_path: None,
@@ -85,7 +104,7 @@ fn emoji_build() {
 
 fn build_emojis() -> HashSet<Emoji> {
     let rainbow = Emoji {
-        sequence: vec![0x1f3f3, 0x200d, 0x1f308],
+        sequence: vec![0x1f3f3, 0xfe0f, 0x200d, 0x1f308],
         name: Some(String::from("rainbow flag")),
         kinds: Some(vec![EmojiZwjSequence]),
         svg_path: None,

@@ -67,7 +67,6 @@ impl EmojiTable {
     /// # Examples:
     /// ```
     /// use std::path::PathBuf;
-    /// use emoji_builder::emojis::emoji::EmojiKind::EmojiZwjSequence;
     /// use emoji_builder::emoji_tables::EmojiTable;
     /// use std::collections::HashMap;
     /// use emoji_builder::emojis::emoji_kind::EmojiKind::EmojiZwjSequence;
@@ -82,7 +81,7 @@ impl EmojiTable {
     /// let rainbow = vec![0x1f3f3, 0xfe0f, 0x200d, 0x1f308];
     /// let rainbow_no_fe0f = vec![0x1f3f3, 0x200d, 0x1f308];
     ///
-    /// let rainbow_entry = (vec![EmojiZwjSequence], None, None);
+    /// let rainbow_entry = (vec![EmojiZwjSequence], None, vec![]);
     ///
     /// assert!(table.as_ref().contains_key(&rainbow));
     /// // Versions without FE0F are _not_ included anymore
@@ -155,7 +154,7 @@ impl EmojiTable {
     /// # Examples
     /// ```
     /// use emoji_builder::emoji_tables::EmojiTable;
-    /// use emoji_builder::emojis::emoji::EmojiKind;
+    /// use emoji_builder::emojis::emoji_kind::EmojiKind;
     /// use std::path::PathBuf;
     ///
     /// let mut table = EmojiTable::new();
@@ -166,10 +165,10 @@ impl EmojiTable {
     /// let rainbow = vec![0x1f3f3, 0xfe0f, 0x200d, 0x1f308];
     /// let rainbow_no_fe0f = vec![0x1f3f3, 0x200d, 0x1f308];
     ///
-    /// let rainbow_entry = (vec![EmojiKind::EmojiZwjSequence], None, None);
+    /// let rainbow_entry = (vec![EmojiKind::EmojiZwjSequence], None, vec![]);
     ///
     /// assert!(table.as_ref().contains_key(&rainbow));
-    /// assert!(table.as_ref().contains_key(&rainbow_no_fe0f));
+    /// assert!(!table.as_ref().contains_key(&rainbow_no_fe0f));
     ///
     /// assert_eq!(rainbow_entry, *table.get(&rainbow).unwrap());
     /// ```
@@ -271,7 +270,7 @@ impl EmojiTable {
     /// let name = "thinking face";
     /// let codepoint = vec![0x1f914];
     /// let mut table = EmojiTable::new();
-    /// table.insert(codepoint.clone(), (vec![], Some(name.to_string()), None));
+    /// table.insert(codepoint.clone(), (vec![], Some(name.to_string()), vec![]));
     ///
     /// // We can't find the emoji by its name!
     /// assert_eq!(table.get_by_name(name), None);
@@ -290,7 +289,7 @@ impl EmojiTable {
     /// let codepoint = vec![0x1f914];
     /// let mut table = EmojiTable::new();
     /// // Even if this description string is the same as the name, it does not have to be.
-    /// table.insert(codepoint.clone(), (vec![], Some(name.to_string()), None));
+    /// table.insert(codepoint.clone(), (vec![], Some(name.to_string()), vec![]));
     /// table.insert_lookup_name(name, codepoint.clone());
     ///
     /// // Assert that we can find an entry with the given name (and that it's the correct one)
@@ -314,7 +313,7 @@ impl EmojiTable {
     ///
     /// let mut table = EmojiTable::new();
     /// let key = vec![0x1f914];
-    /// let entry = (vec![], Some(String::from("Thinking")), None);
+    /// let entry = (vec![], Some(String::from("Thinking")), vec![]);
     /// table.insert(key.clone(), entry.clone());
     /// table.insert_lookup_name("ThInKiNg_FaCe", key.clone());
     /// assert_eq!(Some((key.clone(), &entry)), table.get_by_name("tHiNkIng-fAcE"));
@@ -725,7 +724,30 @@ fn test_online() {
 
     assert_eq!(
         table.get_by_name("woman").unwrap().1.0,
-        vec![EmojiKind::Emoji, EmojiKind::ModifierBase, EmojiKind::EmojiPresentation, EmojiKind::Other(String::from("extended pictographic"))]
+        vec![
+            EmojiKind::Emoji,
+            EmojiKind::ModifierBase,
+            EmojiKind::EmojiPresentation,
+            EmojiKind::ExtendedPictographic
+        ]
     );
 }
 
+
+#[test]
+fn print_regexes() {
+    lazy_static! {
+            static ref HEX_SEQUENCE: Regex = Regex::new(r"[a-fA-F0-9]{1,8}").unwrap();
+            static ref RANGE: Regex = Regex::new(&format!(r"(?P<range>(?P<range_start>{hex})\.\.(?P<range_end>{hex}))", hex = &*HEX_SEQUENCE)).unwrap();
+            static ref SEQUENCE: Regex = Regex::new(&format!(r"(?P<sequence>({hex})(\s+({hex}))*)", hex = &*HEX_SEQUENCE)).unwrap();
+            static ref EMOJI_REGEX: Regex = Regex::new(&format!(r"(?P<codepoints>{}|{})", &*RANGE, &*SEQUENCE)).unwrap();
+            static ref EMOJI_KIND_REGEX: Regex = Regex::new(&format!(r"(?P<kind>{})", EmojiKind::regex())).unwrap();
+            static ref DATA_REGEX: Regex = Regex::new(&format!(r"^{}\s*;\s*{}\s*(;(?P<name>.*)\s*)?(#.*)?$", &*EMOJI_REGEX, &*EMOJI_KIND_REGEX)).unwrap();
+    }
+
+    let regexr_incompatible = Regex::new(r"(\?P<[^>]+>)|(\(\?i\))").unwrap();
+    let regex = format!("{}", &*DATA_REGEX);
+    let regex = regexr_incompatible.replace_all(&regex, "");
+
+    println!("{}", regex);
+}
