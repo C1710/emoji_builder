@@ -44,7 +44,7 @@ use std::fs::create_dir_all;
 use std::io::{BufReader, Write};
 use std::process::exit;
 use emoji_builder::changes::FileHashes;
-use std::convert::TryInto;
+
 
 const LICENSES: include_dir::Dir = include_dir!("licenses");
 
@@ -247,7 +247,7 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
     let matches: ArgMatches = app
         .get_matches();
 
-    let hashes = FileHashes::new();
+    let _hashes = FileHashes::new();
 
     stderrlog::new()
         .module(module_path!())

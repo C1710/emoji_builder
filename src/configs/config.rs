@@ -105,7 +105,7 @@ impl<S> TryFrom<(PackConfigPrototype, S)> for PackConfig
         let (packs, errors): (Vec<_>, Vec<_>) = prototype.packs
             .iter()
             .filter_map(|pack_path| source.request_source(pack_path).ok())
-            .map(|pack_source| EmojiPack::load(pack_source))
+            .map(EmojiPack::load)
             .partition_map(|pack_result| match pack_result {
                 Ok(pack) => Either::Left(pack),
                 Err(error) => Either::Right(error)

@@ -54,7 +54,7 @@ where Prototype: LoadablePrototype<Source>,
         where Source: LoadableSource {
         let prototype = Prototype::load_prototype(&source)?;
         Self::try_from((prototype, source))
-            .map_err(|error| LoadingError::Loadable(error))
+            .map_err(LoadingError::Loadable)
     }
 }
 

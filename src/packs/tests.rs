@@ -1,4 +1,4 @@
-use crate::packs::pack::{EmojiPack, EmojiPackPrototype};
+use crate::packs::pack::{EmojiPack};
 use std::path::PathBuf;
 use crate::emojis::emoji::Emoji;
 use crate::loadables::loadable::Loadable;

@@ -16,11 +16,11 @@ impl<D, S> LoadablePrototype<S> for D
 
     fn load_prototype(source: &S) -> Result<Self, PrototypeLoadingError<Self, S>> {
         let empty_path = PathBuf::new();
-        let base_file = source.root_file().unwrap_or_else(|| &empty_path);
+        let base_file = source.root_file().unwrap_or(&empty_path);
         let reader = source.request_root_file()
-            .map_err(|error| PrototypeLoadingError::Source(error))?;
+            .map_err(PrototypeLoadingError::Source)?;
         let deserializer = DeserializerFunction::for_file(base_file).unwrap_or_default();
-        deserializer.deserialize(reader).map_err(|error| PrototypeLoadingError::Prototype(error))
+        deserializer.deserialize(reader).map_err(PrototypeLoadingError::Prototype)
     }
 }
 

@@ -34,7 +34,7 @@ impl<R: 'static> LoadableSource for ReaderSource<R>
     type Error = NoError;
 
     fn request(&self, path: &Path) -> Result<Box<dyn Read>, Self::Error> {
-        if path != &*EMPTY_PATH {
+        if path != *EMPTY_PATH {
             Err(NoError {})
         } else {
             Ok(Box::new(self.reader.clone()))

@@ -28,7 +28,7 @@ pub trait LoadableSource: Debug + Send + Sync + Sized {
     
     fn request_root_file(&self) -> Result<Box<dyn Read>, Self::Error> {
         let empty_file = PathBuf::new();
-        let base_file = self.root_file().unwrap_or_else(|| &empty_file);
+        let base_file = self.root_file().unwrap_or(&empty_file);
         
         self.request(base_file)
     }

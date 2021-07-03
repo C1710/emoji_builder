@@ -208,9 +208,7 @@ impl<S> LoadablePrototype<S> for FileHashes
     type Error = std::io::Error;
 
     fn load_prototype(source: &S) -> Result<Self, PrototypeLoadingError<Self, S>> {
-        let reader = source.request_root_file().map_err(|error|
-            PrototypeLoadingError::Source(error)
-        )?;
+        let reader = source.request_root_file().map_err(PrototypeLoadingError::Source)?;
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(false)
             .from_reader(reader);

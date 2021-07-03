@@ -44,7 +44,7 @@ use std::cmp::max;
 use std::sync::Mutex;
 use std::cell::Cell;
 use std::convert::TryFrom;
-use std::io::{Read, BufReader};
+use std::io::BufReader;
 use crate::loadables::sources::LoadableSource;
 use serde::Deserialize;
 use crate::loadables::NoError;
@@ -174,6 +174,7 @@ impl<S> TryFrom<(EmojiPackPrototype, S)> for EmojiPack
             prototype.offline,
             prototype.unicode_version
         ).unwrap_or_default();
+        // Even though IntelliJ says something else, the errors _are_ used
         let (emojis, emoji_errors, source_errors) = load_emojis_from_source(&source, prototype.emoji_dirs.unwrap_or_default(), Some(&table), false);
         let (flags, flag_errors, flag_source_errors) = load_emojis_from_source(&source, prototype.flag_dirs.unwrap_or_default(), Some(&table), true);
 
@@ -214,7 +215,7 @@ fn load_emojis_from_source<S>(
         });
 
     let (emojis, emoji_errors) = emoji_dirs.iter()
-        .map(|emojis| emojis.into_iter())
+        .map(|emojis| emojis.iter())
         .map(|emojis| emojis.filter_map(|emoji_source|
             emoji_source.root_file()
         ))
