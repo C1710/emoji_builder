@@ -20,7 +20,7 @@ use std::iter::FromIterator;
 use std::path::PathBuf;
 
 use crate::emojis::emoji::Emoji;
-use crate::emoji_tables::EmojiTable;
+use crate::tables::emoji_tables::EmojiTable;
 use crate::emojis::emoji_kind::EmojiKind::EmojiZwjSequence;
 
 const SVG_PATH: &str = "test_files/svg";

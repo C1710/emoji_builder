@@ -25,11 +25,12 @@ use std::path::PathBuf;
 use itertools::Itertools;
 use regex::{CaptureMatches, Regex};
 
-use crate::emoji_tables::{EmojiTable, EmojiTableError};
-use crate::emoji_tables::EmojiTableError::KeyNotFound;
 use crate::emojis::emoji::EmojiError::NotAFileName;
 use crate::emojis::emoji_kind::EmojiKind::{EmojiFlagSequence, EmojiKeycapSequence};
 use crate::emojis::emoji_kind::EmojiKind;
+use crate::tables::emoji_tables::EmojiTable;
+use crate::tables::errors::EmojiTableError;
+use crate::tables::errors::EmojiTableError::KeyNotFound;
 
 /// A struct that holds information for one particular emoji (which might also be a sequence).
 #[derive(Debug, Eq, Clone)]
@@ -75,7 +76,7 @@ impl Emoji {
     /// use emoji_builder::emojis::emoji::Emoji;
     /// use emoji_builder::emojis::emoji_kind::EmojiKind;
     /// use std::collections::HashMap;
-    /// use emoji_builder::emoji_tables::EmojiTable;
+    /// use emoji_builder::tables::emoji_tables::EmojiTable;
     /// use emoji_builder::emojis::emoji_status::EmojiStatus;
     ///
     /// let mut table = EmojiTable::new();
@@ -327,7 +328,7 @@ impl Emoji {
     /// use std::collections::HashMap;
     /// use emoji_builder::emojis::emoji::Emoji;
     /// use emoji_builder::emojis::emoji_kind::EmojiKind;
-    /// use emoji_builder::emoji_tables::EmojiTable;
+    /// use emoji_builder::tables::emoji_tables::EmojiTable;
     /// use emoji_builder::emojis::emoji_status::EmojiStatus;
     ///
     /// let mut table = EmojiTable::new();
@@ -463,7 +464,7 @@ impl Emoji {
     /// ```
     /// use std::collections::HashMap;
     /// use emoji_builder::emojis::emoji::Emoji;
-    /// use emoji_builder::emoji_tables::EmojiTable;
+    /// use emoji_builder::tables::emoji_tables::EmojiTable;
     /// use emoji_builder::emojis::emoji_kind::EmojiKind;
     /// use emoji_builder::emojis::emoji_status::EmojiStatus;
     ///

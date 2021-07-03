@@ -22,7 +22,7 @@ use crate::builder::EmojiBuilder;
 use crate::builders::blobmoji::Blobmoji;
 use crate::changes::FileHashes;
 use crate::emojis::emoji::Emoji;
-use crate::emoji_tables::EmojiTable;
+use crate::tables::emoji_tables::EmojiTable;
 use crate::tests::integration::builder::DummyBuilder;
 
 pub struct TestResult<T: EmojiBuilder> {

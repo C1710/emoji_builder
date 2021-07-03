@@ -39,7 +39,7 @@ use yaml_rust::Yaml;
 use emoji_builder::builder::EmojiBuilder;
 use emoji_builder::builders::blobmoji::Blobmoji;
 use emoji_builder::emojis::emoji::Emoji;
-use emoji_builder::emoji_tables::EmojiTable;
+use emoji_builder::tables::emoji_tables::EmojiTable;
 use std::fs::create_dir_all;
 use std::io::{BufReader, Write};
 use std::process::exit;

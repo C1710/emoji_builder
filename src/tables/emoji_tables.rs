@@ -18,27 +18,27 @@
 //!
 //! [unicode]: https://unicode.org/Public/emoji/13.0/
 
-use std::collections::hash_map::RandomState;
 use std::collections::{HashMap, HashSet};
+use std::collections::hash_map::RandomState;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Error};
 use std::path::Path;
 use std::str::FromStr;
+#[cfg(feature = "online")]
+use std::sync::RwLock;
 
 use itertools::Itertools;
 use regex::Regex;
 
 use crate::emojis::emoji::Emoji;
-#[cfg(feature = "online")]
-use std::sync::RwLock;
 use crate::emojis::emoji_kind::EmojiKind;
 use crate::emojis::emoji_status::EmojiStatus;
-
+use crate::tables::errors::ExpansionError;
 
 /// A code sequence
-type EmojiTableKey = Vec<u32>;
+pub type EmojiTableKey = Vec<u32>;
 // The EmojiKinds and optionally a description/name and a possible status of an emoji
-type EmojiTableEntry = (Vec<EmojiKind>, Option<String>, Vec<EmojiStatus>);
+pub type EmojiTableEntry = (Vec<EmojiKind>, Option<String>, Vec<EmojiStatus>);
 
 const EMOJI_SEQUENCE_SPACE_REGEX: &str = r"(([A-F0-9a-f]{1,8})(\s+([A-F0-9a-f]{1,8}))*)";
 const EMOJI_STATUS_REGEX: &str = r"(component|fully-qualified|minimally-qualified|unqualified)";
@@ -51,12 +51,20 @@ const EMOJI_NAME_REGEX: &str = r"(.*)?\s*E(\d+.\d+) (.+)";
 #[derive(PartialEq)]
 #[derive(Eq)]
 #[derive(Clone)]
-pub struct EmojiTable(HashMap<EmojiTableKey, EmojiTableEntry>, HashMap<String, EmojiTableKey>);
+pub struct EmojiTable {
+    table: HashMap<EmojiTableKey, EmojiTableEntry>,
+    names: HashMap<String, EmojiTableKey>,
+    ignore_fe0f: bool
+}
 
 impl EmojiTable {
     /// Creates a new, empty emoji table
     pub fn new() -> Self {
-        Self(HashMap::new(), HashMap::new())
+        Self{
+            table: HashMap::new(),
+            names: HashMap::new(),
+            ignore_fe0f: false
+        }
     }
 
     /// Reads multiple files which are formatted in the same way as the Unicode® emoji data tables
@@ -67,7 +75,7 @@ impl EmojiTable {
     /// # Examples:
     /// ```
     /// use std::path::PathBuf;
-    /// use emoji_builder::emoji_tables::EmojiTable;
+    /// use emoji_builder::tables::emoji_tables::EmojiTable;
     /// use std::collections::HashMap;
     /// use emoji_builder::emojis::emoji_kind::EmojiKind::EmojiZwjSequence;
     ///
@@ -153,7 +161,7 @@ impl EmojiTable {
     /// Currently, descriptions will not be used
     /// # Examples
     /// ```
-    /// use emoji_builder::emoji_tables::EmojiTable;
+    /// use emoji_builder::tables::emoji_tables::EmojiTable;
     /// use emoji_builder::emojis::emoji_kind::EmojiKind;
     /// use std::path::PathBuf;
     ///
@@ -180,7 +188,7 @@ impl EmojiTable {
     }
 
     fn _get_description(&self, sequence: &[u32]) -> Option<String> {
-        match self.0.get(sequence) {
+        match self.table.get(sequence) {
             Some((_, description, _)) => description.clone(),
             None => None,
         }
@@ -214,7 +222,15 @@ impl EmojiTable {
                     description: Option<&str>,
                     status: Option<EmojiStatus>
     ) {
-        let existing_entry = self.0.get_mut(&emoji);
+        if self.ignore_fe0f && emoji.contains(&0xfe0f) {
+            self.update_emoji(
+                strip_fe0f(&emoji),
+                kind.clone(),
+                description,
+                status
+            );
+        }
+        let existing_entry = self.table.get_mut(&emoji);
         if let Some((kinds, existing_description, existing_status)) = existing_entry {
             Self::add_kind(kinds, kind);
             Self::update_description(existing_description, description);
@@ -227,7 +243,7 @@ impl EmojiTable {
                 // If an emoji can have more than one EmojiStatus, it'll be probably max 2
                 status.map(|status| vec![status]).unwrap_or_else(|| Vec::with_capacity(2))
             );
-            self.0.insert(emoji, entry);
+            self.table.insert(emoji, entry);
         }
     }
 
@@ -265,7 +281,7 @@ impl EmojiTable {
     /// Please be aware that no name-key-mapping is inserted.
     /// That means:
     /// ```
-    /// use emoji_builder::emoji_tables::EmojiTable;
+    /// use emoji_builder::tables::emoji_tables::EmojiTable;
     ///
     /// let name = "thinking face";
     /// let codepoint = vec![0x1f914];
@@ -276,14 +292,18 @@ impl EmojiTable {
     /// assert_eq!(table.get_by_name(name), None);
     /// ```
     pub fn insert(&mut self, key: EmojiTableKey, entry: EmojiTableEntry) -> Option<EmojiTableEntry> {
-        self.0.insert(key, entry)
+        if self.ignore_fe0f {
+            self.table.insert(strip_fe0f(&key), entry.clone())
+                .unwrap_or_default();
+        }
+        self.table.insert(key, entry)
     }
 
     /// Inserts a new name to codepoint mapping with the name normalized to lowercase and space
     /// as a delimiter; returns the previous key that this name mapped to if there was one.
     /// # Example
     /// ```
-    /// use emoji_builder::emoji_tables::EmojiTable;
+    /// use emoji_builder::tables::emoji_tables::EmojiTable;
     ///
     /// let name = "thinking face";
     /// let codepoint = vec![0x1f914];
@@ -297,19 +317,19 @@ impl EmojiTable {
     /// ```
     pub fn insert_lookup_name(&mut self, name: &str, key: EmojiTableKey) -> Option<EmojiTableKey> {
         let lookup_name = Self::normalize_lookup_name(name);
-        self.1.insert(lookup_name, key)
+        self.names.insert(lookup_name, key)
     }
 
     /// Returns the table entry for a given key
     pub fn get<T: AsRef<EmojiTableKey>>(&self, index: &T) -> Option<&EmojiTableEntry> {
         let index: &EmojiTableKey = index.as_ref();
-        self.0.get(index)
+        self.table.get(index)
     }
 
     /// Finds an emoji by its name (this is case-insensitive and converts delimiters to the desired format)
     /// # Examples
     /// ```
-    /// use emoji_builder::emoji_tables::EmojiTable;
+    /// use emoji_builder::tables::emoji_tables::EmojiTable;
     ///
     /// let mut table = EmojiTable::new();
     /// let key = vec![0x1f914];
@@ -330,12 +350,12 @@ impl EmojiTable {
         let chars = name.chars()
             .map(|character| character as u32)
             .collect_vec();
-        if let Some(entry) = self.0.get(&chars) {
+        if let Some(entry) = self.table.get(&chars) {
             Some((chars, entry))
         } else {
             let lookup_name = Self::normalize_lookup_name(name);
-            if let Some(codepoint) = self.1.get(&lookup_name) {
-                self.0.get(codepoint).map(|entry| (codepoint.clone(), entry))
+            if let Some(codepoint) = self.names.get(&lookup_name) {
+                self.table.get(codepoint).map(|entry| (codepoint.clone(), entry))
             } else {
                 None
             }
@@ -361,12 +381,12 @@ impl EmojiTable {
 
     /// Returns the size of the table
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.table.len()
     }
 
     /// Checks whether the table is empty
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.table.is_empty()
     }
 
 
@@ -548,7 +568,7 @@ impl EmojiTable {
     /// `additional_emojis` are those emojis that are found in the font, but not in the table; might be empty.
     pub fn validate(&self, emojis: &HashSet<EmojiTableKey>, ignore_fe0f: bool) -> (Result<(), Vec<Emoji>>, Vec<Emoji>) {
         // TODO: Introduce the status to filter out unqualified emojis/non-RGI
-        let table_emojis = self.0
+        let table_emojis = self.table
             .iter()
             // Only validate emojis that we have names for (i.e. they're in emoji-test.txt. Otherwise they won't matter anyway)
             // And those with an EmojiKind, as otherwise it's likely not an emoji
@@ -606,14 +626,48 @@ impl EmojiTable {
     }
 
     pub fn extend(&mut self, other: EmojiTable) {
-        self.0.extend(other.0.into_iter());
-        self.1.extend(other.1.into_iter());
+        if !self.ignore_fe0f {
+            self.table.extend(other.table.into_iter());
+        } else {
+            let other_table_no_fe0f = other.table.iter()
+                .filter_map(|(key, entry)| if key.contains(&0xfe0f) {
+                    Some((key.clone(), entry.clone()))
+                } else {
+                    None
+                }
+            ).collect_vec();
+
+            let entries = other.table.into_iter().chain(other_table_no_fe0f);
+            self.table.extend(entries);
+        }
+        self.names.extend(other.names.into_iter());
     }
 
     pub fn extend_preserve_own(&mut self, other: EmojiTable) {
-        self.0 = other.0.into_iter().chain(self.0.drain().into_iter()).collect();
-        self.1 = other.1.into_iter().chain(self.1.drain().into_iter()).collect();
+        if !self.ignore_fe0f {
+            self.table = other.table.into_iter().chain(self.table.drain()).collect();
+        } else {
+            let other_table_no_fe0f = other.table.iter()
+                .filter_map(|(key, entry)| if key.contains(&0xfe0f) {
+                    Some((key.clone(), entry.clone()))
+                } else {
+                    None
+                }
+            ).collect_vec();
+
+            let entries = other.table.into_iter().chain(other_table_no_fe0f);
+            self.table = entries.chain(self.table.drain()).collect();
+        }
+
+        self.names = other.names.into_iter().chain(self.names.drain().into_iter()).collect();
     }
+}
+
+fn strip_fe0f(codepoint_with_fe0f: &[u32]) -> EmojiTableKey {
+    codepoint_with_fe0f.iter()
+        .filter(|codepoint| **codepoint != 0xfe0f)
+        .copied()
+        .collect()
 }
 
 fn insert_in_order<T>(existing: &mut Vec<T>, new: Option<T>)
@@ -637,19 +691,23 @@ impl From<HashMap<EmojiTableKey, EmojiTableEntry>> for EmojiTable {
             .iter()
             .filter_map(|(codepoint, (_, name, _))| name.as_ref().map(|name| (name.clone(), codepoint.clone())))
             .collect();
-        EmojiTable(table, names_map)
+        EmojiTable {
+            table,
+            names: names_map,
+            ignore_fe0f: false
+        }
     }
 }
 
 impl From<EmojiTable> for HashMap<EmojiTableKey, EmojiTableEntry> {
     fn from(table: EmojiTable) -> Self {
-        table.0
+        table.table
     }
 }
 
 impl AsRef<HashMap<EmojiTableKey, EmojiTableEntry>> for EmojiTable {
     fn as_ref(&self) -> &HashMap<Vec<u32>, EmojiTableEntry, RandomState> {
-        &self.0
+        &self.table
     }
 }
 
@@ -660,45 +718,6 @@ type TableCache = RwLock<HashMap<(u32, u32), HashMap<String, bytes::Bytes>>>;
 lazy_static! {
     static ref TABLE_CACHE: TableCache =
         RwLock::new(HashMap::with_capacity(32));
-}
-
-
-/// A representation of errors encountered while parsing or using emoji tables.
-#[derive(Debug)]
-pub enum EmojiTableError {
-    /// Indicates that an emoji with the given sequence is not in the table
-    KeyNotFound(EmojiTableKey),
-}
-
-#[derive(Debug)]
-/// An error that occurs while expanding an [EmojiTable]
-pub enum ExpansionError {
-    /// Wrapper for [std::io::Error]
-    Io(std::io::Error),
-    /// Wrapper for multiple errors
-    Multiple(Vec<ExpansionError>),
-    #[cfg(feature = "online")]
-    /// Wrappter for [reqwest::Error]
-    Reqwest(reqwest::Error),
-}
-
-impl From<std::io::Error> for ExpansionError {
-    fn from(err: std::io::Error) -> Self {
-        ExpansionError::Io(err)
-    }
-}
-
-impl From<Vec<ExpansionError>> for ExpansionError {
-    fn from(errors: Vec<ExpansionError>) -> Self {
-        Self::Multiple(errors)
-    }
-}
-
-#[cfg(feature = "online")]
-impl From<reqwest::Error> for ExpansionError {
-    fn from(err: reqwest::Error) -> Self {
-        ExpansionError::Reqwest(err)
-    }
 }
 
 #[cfg(feature = "online")]

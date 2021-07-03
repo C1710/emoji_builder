@@ -32,7 +32,7 @@
 //     #[serde(default)]
 //     config: HashMap<String, String>
 
-use crate::emoji_tables::EmojiTable;
+use crate::tables::emoji_tables::EmojiTable;
 use std::collections::{HashSet, HashMap};
 use crate::emojis::emoji::{Emoji, EmojiError};
 use std::path::PathBuf;
@@ -237,7 +237,7 @@ fn load_tables<S>(table_files: Vec<PathBuf>,
                   source: &S,
                   offline: Option<bool>,
                   unicode_version: Option<(u32, u32)>)
-    -> Result<EmojiTable, (Vec<S::Error>, Option<crate::emoji_tables::ExpansionError>)>
+    -> Result<EmojiTable, (Vec<S::Error>, Option<crate::tables::errors::ExpansionError>)>
     where S: LoadableSource {
 
     let mut table = EmojiTable::new();
