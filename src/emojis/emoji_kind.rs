@@ -1,11 +1,10 @@
-use alloc::string::{String, ToString};
 use core::cmp::{Ord, Ordering, PartialOrd};
 use core::convert::From;
 use core::option::Option;
 use core::result::Result;
 use core::result::Result::{Err, Ok};
-use core::str::traits::FromStr;
-use emoji_builder::emojis::emoji::REGEX;
+use std::str::FromStr;
+use itertools::Itertools;
 
 /// An internal representation for the different emoji types represented in the Unicode® Tables
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -28,6 +27,7 @@ pub enum EmojiKind {
     EmojiFlagSequence,
     /// An emoji with a modifier (e.g. skin tone)
     EmojiModifierSequence,
+    // TODO: delete.
     /// Something else, that is not mapped here
     Other(String),
 }

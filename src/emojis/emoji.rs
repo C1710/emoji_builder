@@ -29,7 +29,8 @@ use regex::{CaptureMatches, Regex};
 use crate::emoji_tables::{EmojiTable, EmojiTableError};
 use crate::emoji_tables::EmojiTableError::KeyNotFound;
 use crate::emojis::emoji::EmojiError::NotAFileName;
-use crate::emojis::emoji::EmojiKind::{EmojiFlagSequence, EmojiKeycapSequence};
+use crate::emojis::emoji_kind::EmojiKind::{EmojiFlagSequence, EmojiKeycapSequence};
+use crate::emojis::emoji_kind::EmojiKind;
 
 /// A struct that holds information for one particular emoji (which might also be a sequence).
 #[derive(Debug, Eq, Clone)]
@@ -332,7 +333,7 @@ impl Emoji {
     /// let kind = vec![EmojiKind::Emoji];
     /// let name = String::from("Thinking Face");
     ///
-    /// table.insert(sequence.clone(), (kind.clone(), Some(name.clone()), Some(EmojiStatus::FullyQualified)));
+    /// table.insert(sequence.clone(), (kind.clone(), Some(name.clone()), vec![EmojiStatus::FullyQualified]));
     ///
     /// let mut emoji = Emoji::from(sequence.clone());
     /// emoji.set_kind(&table);
@@ -461,7 +462,7 @@ impl Emoji {
     /// let kind = vec![EmojiKind::Emoji];
     /// let name = String::from("Thinking Face");
     ///
-    /// table.insert(sequence.clone(), (kind.clone(), Some(name.clone()), Some(vec![EmojiStatus::FullyQualified])));
+    /// table.insert(sequence.clone(), (kind.clone(), Some(name.clone()), vec![EmojiStatus::FullyQualified]));
     ///
     /// let mut emoji = Emoji::from(sequence.clone());
     /// emoji.set_name(&table);

@@ -1,4 +1,5 @@
 use std::str::FromStr;
+use std::cmp::Ordering;
 
 /// The status of an emoji according to `emoji-test.txt`
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -47,5 +48,17 @@ impl FromStr for EmojiStatus {
             "minimally-qualified" => Ok(Self::MinimallyQualified),
             other => Err(other.to_string())
         }
+    }
+}
+
+impl PartialOrd for EmojiStatus {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.to_string().partial_cmp(&other.to_string())
+    }
+}
+
+impl Ord for EmojiStatus {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.to_string().cmp(&other.to_string())
     }
 }

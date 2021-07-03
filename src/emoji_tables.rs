@@ -222,10 +222,11 @@ impl EmojiTable {
             insert_in_order(existing_status, status);
         } else {
             let entry = (
-                // We expect that at some point the emoji will have at least one kind
-                kind.map(|kind| vec![kind]).unwrap_or_else(|| Vec::with_capacity(1)),
+                // We expect that at some point the emoji will have up to like 4 EmojiKinds
+                kind.map(|kind| vec![kind]).unwrap_or_else(|| Vec::with_capacity(4)),
                 description.map(|descr| descr.to_owned()),
-                status
+                // If an emoji can have more than one EmojiStatus, it'll be probably max 2
+                status.map(|status| vec![status]).unwrap_or_else(|| Vec::with_capacity(2))
             );
             self.0.insert(emoji, entry);
         }
@@ -553,7 +554,7 @@ impl EmojiTable {
             // Only validate emojis that we have names for (i.e. they're in emoji-test.txt. Otherwise they won't matter anyway)
             // And those with an EmojiKind, as otherwise it's likely not an emoji
             .filter_map(|(key, (kinds, name, status))| if
-                status.unwrap_or_default().is_emoji() || (name.is_some() && !kinds.is_empty()) {
+                status.iter().any(|status| status.is_emoji()) || (name.is_some() && !kinds.is_empty()) {
                 Some(key)
             } else {
                 None
