@@ -24,6 +24,9 @@ use crate::changes::FileHashes;
 use crate::emojis::emoji::Emoji;
 use crate::tables::emoji_tables::EmojiTable;
 use crate::tests::integration::builder::DummyBuilder;
+use crate::loadables::sources::fs_source::FsSource;
+use itertools::Itertools;
+use crate::loadables::loadable::LoadablePrototype;
 
 pub struct TestResult<T: EmojiBuilder> {
     build_path: PathBuf,
@@ -137,8 +140,11 @@ fn test_blobmoji() {
 }
 
 fn check_hashes(actual: &Path, expected: &Path) {
-    let actual = FileHashes::from_path(actual.to_path_buf()).unwrap();
-    let expected = FileHashes::from_path(expected.to_path_buf()).unwrap();
+    let (actual, expected) = vec![actual, expected]
+        .iter()
+        .map(|path| FsSource::new(path.to_path_buf()).unwrap())
+        .map(|source| FileHashes::load_prototype(&source).unwrap())
+        .collect_tuple().unwrap();
     let actual: HashMap<_, _> = actual.into();
     let expected: HashMap<_, _> = expected.into();
     assert_eq!(actual, expected);

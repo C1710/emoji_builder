@@ -1,3 +1,7 @@
+use crate::tables::emoji_tables::EmojiTable;
+use crate::emojis::emoji_kind::EmojiKind;
+use regex::Regex;
+
 #[cfg(feature = "online")]
 #[test]
 fn test_online() {

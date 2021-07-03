@@ -20,6 +20,8 @@ use std::path::PathBuf;
 
 use crate::changes::FileHashes;
 use crate::emojis::emoji::Emoji;
+use crate::loadables::sources::fs_source::FsSource;
+use crate::loadables::loadable::LoadablePrototype;
 
 const SVG_FILE: &str = "test_files/svg/emoji_u1f9a6.svg";
 const HASH_FILE: &str = "test_files/hash.csv";
@@ -54,7 +56,8 @@ fn test_hashing() {
     }
 
     // Test the loading mechanism
-    let correct_hashes = FileHashes::from_path(correct_path).unwrap();
+    let source = FsSource::new(correct_path).unwrap();
+    let correct_hashes = FileHashes::load_prototype(&source).unwrap();
     assert_eq!(correct_hashes.len(), 1);
     assert!(correct_hashes.check(&emoji).unwrap());
 }

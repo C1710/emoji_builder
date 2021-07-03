@@ -559,7 +559,7 @@ impl EmojiTable {
 
     /// A helper function to get emojis by their name directly
     #[cfg(test)]
-    fn get_codepoint_by_name(&self, name: &str) -> Vec<u32> {
+    pub fn get_codepoint_by_name(&self, name: &str) -> Vec<u32> {
         self.get_by_name(name).unwrap().0.clone()
     }
 
@@ -582,6 +582,7 @@ impl EmojiTable {
             } else {
                 None
             });
+        // TODO: Maybe add an || self.ignore_fe0f here?
         let table_emojis: HashSet<EmojiTableKey> = if ignore_fe0f {
             table_emojis
                 .map(|emoji| emoji.iter()

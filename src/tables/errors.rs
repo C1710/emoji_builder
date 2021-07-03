@@ -1,4 +1,4 @@
-use crate::tables::emoji_tables::{EmojiTableKey, EmojiTable};
+use crate::tables::emoji_tables::EmojiTableKey;
 
 /// A representation of errors encountered while parsing or using emoji tables.
 #[derive(Debug)]

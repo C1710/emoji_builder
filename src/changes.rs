@@ -66,7 +66,6 @@ impl FileHashes {
         FileHashes(table)
     }
 
-    #[deprecated]
     pub fn from_reader<R: std::io::Read>(reader: R) -> Self {
         Self::from_csv_reader(&mut csv::ReaderBuilder::new()
             .has_headers(false)
@@ -212,10 +211,7 @@ impl<S> LoadablePrototype<S> for FileHashes
 
     fn load_prototype(source: &S) -> Result<Self, PrototypeLoadingError<Self, S>> {
         let reader = source.request_root_file().map_err(PrototypeLoadingError::Source)?;
-        let mut reader = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .from_reader(reader);
-        Ok(FileHashes::from_csv_reader(&mut reader))
+        Ok(FileHashes::from_reader(reader))
     }
 }
 

@@ -59,6 +59,7 @@ where Prototype: LoadablePrototype<Source>,
 }
 
 
+
 pub trait LoadablePrototype<Source>: Debug + Send + Sync
     where Source: LoadableSource {
     type Error: Error;
