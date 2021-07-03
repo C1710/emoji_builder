@@ -29,7 +29,7 @@
 
 use std::collections::HashMap;
 use std::fs::{copy, create_dir_all, File, remove_file, rename};
-use std::io::{Write, Read};
+use std::io::Write;
 use std::path::{PathBuf, Path};
 use std::str::FromStr;
 use clap::{App, Arg, ArgMatches, SubCommand};
@@ -47,8 +47,8 @@ use crate::emojis::emoji::Emoji;
 use crate::emoji_processor::EmojiProcessor;
 use crate::emoji_processors::reduce_colors::ReduceColors;
 use crate::builders::blobmoji::error::BlobmojiError;
-use crate::configs::builder_config::BuilderConfig;
-use crate::loadables::loadable::{Loadable, LoadablePrototype};
+
+use crate::loadables::loadable::{LoadablePrototype};
 use crate::loadables::sources::fs_source::FsSource;
 
 mod waveflag;

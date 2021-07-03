@@ -35,8 +35,8 @@
 use crate::emoji_tables::EmojiTable;
 use std::collections::{HashSet, HashMap};
 use crate::emojis::emoji::{Emoji, EmojiError};
-use std::path::{Path, PathBuf};
-use std::iter::{FromIterator, Map};
+use std::path::PathBuf;
+use std::iter::FromIterator;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator, ParallelIterator, ParallelExtend};
 use itertools::{Itertools, Either};
 use std::hash::Hash;

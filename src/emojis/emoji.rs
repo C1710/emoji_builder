@@ -21,7 +21,6 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use itertools::Itertools;
 use regex::{CaptureMatches, Regex};

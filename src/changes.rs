@@ -25,7 +25,7 @@ use std::io::{Read, Write};
 #[cfg(test)]
 use std::io::Cursor;
 use std::ops::Index;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use csv::Error;
 use digest::generic_array::GenericArray;
@@ -34,10 +34,9 @@ use sha2::{Digest, Sha256};
 use crate::changes::CheckError::{Io, NoFileSpecified};
 use crate::emojis::emoji::Emoji;
 use crate::changes;
-use crate::loadables::loadable::{Loadable, LoadablePrototype};
+use crate::loadables::loadable::LoadablePrototype;
 use crate::loadables::sources::LoadableSource;
 use crate::loadables::prototype_error::PrototypeLoadingError;
-use crate::loadables::NoError;
 use crate::loadables::sources::fs_source::FsSource;
 
 /// A simple struct that maps code sequences to file hashes
