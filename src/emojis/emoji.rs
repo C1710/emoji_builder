@@ -63,7 +63,7 @@ impl Emoji {
     /// ```
     /// use emoji_builder::emojis::emoji::Emoji;
     ///
-    /// let party_face = Emoji::from_sequence("emoji_u1f973.svg", None).unwrap();
+    /// let party_face = Emoji::from_sequence_str("emoji_u1f973.svg", None).unwrap();
     /// assert_eq!(party_face, Emoji {
     ///     sequence: vec![0x1f973],
     ///     name: None,
@@ -82,7 +82,7 @@ impl Emoji {
     /// let mut table = EmojiTable::new();
     /// table.insert(vec![0x1f914 as u32], (vec![EmojiKind::Emoji], Some(String::from("Thinking Face")), vec![EmojiStatus::FullyQualified]));
     ///
-    /// let thinking = Emoji::from_sequence("1f914.png", Some(&table)).unwrap();
+    /// let thinking = Emoji::from_sequence_str("1f914.png", Some(&table)).unwrap();
     ///
     /// assert_eq!(thinking, Emoji {
     ///     sequence: vec![0x1f914],
@@ -91,17 +91,22 @@ impl Emoji {
     ///     svg_path: None
     /// });
     /// ```
-    pub fn from_sequence(sequence: &str, table: Option<&EmojiTable>) -> Result<Emoji, EmojiError> {
+    pub fn from_sequence_str(sequence: &str, table: Option<&EmojiTable>) -> Result<Emoji, EmojiError> {
         lazy_static! {
-            static ref HEX_SEQUENCE: Regex = Regex::new(r"([a-fA-F0-9]{1,8})([-_. ]|$)").unwrap();
+            // 0-codepoints will not be collected
+            static ref HEX_SEQUENCE: Regex = Regex::new(r"([a-fA-F1-9][a-fA-F0-9]{0,7})([-_. ]|$)").unwrap();
         }
         let matches: CaptureMatches = HEX_SEQUENCE.captures_iter(&sequence);
         let code_sequences: Vec<u32> = matches
             .map(|sequence| sequence[1].to_string())
-            .map(|sequence| u32::from_str_radix(&sequence, 16).unwrap_or(0))
-            .filter(|codepoint| *codepoint > 0)
+            // Such a hex string is always parsable to an u32
+            .map(|sequence| u32::from_str_radix(&sequence, 16).unwrap())
             .collect();
-        Emoji::from_u32_sequence(code_sequences, table)
+        if !code_sequences.is_empty() {
+            Emoji::from_u32_sequence(code_sequences, table)
+        } else {
+            Err(EmojiError::NoValidCodepointsFound(sequence.to_string()))
+        }
     }
 
     /// Generates an Emoji from a given codepoint sequence
@@ -127,6 +132,7 @@ impl Emoji {
         table: Option<&EmojiTable>,
     ) -> Result<Emoji, EmojiError> {
         if !code_sequence.is_empty() {
+            // TODO: Make this an option
             let mut emoji = Emoji::from(code_sequence);
             if let Some(table) = table {
                 emoji.set_name(table).unwrap_or_default();
@@ -290,14 +296,14 @@ impl Emoji {
                             Err(err) => if let EmojiError::NoValidCodepointsFound(_) = err {
                                 debug!("{} is not a recognized emoji name", name);
                                 // Now try to parse it as a sequence
-                                Self::from_sequence(name, Some(table))
+                                Self::from_sequence_str(name, Some(table))
                             } else {
                                 // If it was something else than a failed lookup, pass the error
                                 Err(err)
                             }
                         },
                         // In this case, we have no other choice but to interpret it as a sequence
-                        None => Self::from_sequence(name, None)
+                        None => Self::from_sequence_str(name, None)
                     }
                 };
                 if let Ok(emoji) = &mut emoji {

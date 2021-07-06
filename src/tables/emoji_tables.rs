@@ -34,6 +34,7 @@ use crate::emojis::emoji::Emoji;
 use crate::emojis::emoji_kind::EmojiKind;
 use crate::emojis::emoji_status::EmojiStatus;
 use crate::tables::errors::ExpansionError;
+use bimap::BiHashMap;
 
 /// A code sequence
 pub type EmojiTableKey = Vec<u32>;
@@ -54,6 +55,7 @@ const EMOJI_NAME_REGEX: &str = r"(.*)?\s*E(\d+.\d+) (.+)";
 pub struct EmojiTable {
     table: HashMap<EmojiTableKey, EmojiTableEntry>,
     names: HashMap<String, EmojiTableKey>,
+    fe0f_table: BiHashMap<EmojiTableKey, EmojiTableKey>,
     ignore_fe0f: bool
 }
 
@@ -67,6 +69,7 @@ impl EmojiTable {
         Self {
             table: HashMap::new(),
             names: HashMap::new(),
+            fe0f_table: BiHashMap::new(),
             ignore_fe0f
         }
     }
@@ -696,9 +699,25 @@ impl From<HashMap<EmojiTableKey, EmojiTableEntry>> for EmojiTable {
             .iter()
             .filter_map(|(codepoint, (_, name, _))| name.as_ref().map(|name| (name.clone(), codepoint.clone())))
             .collect();
+        // TODO: Make this optional?
+        // We just assume here, that we'll roughly have every second codepoint being a sequence with VS-16
+        // TODO: Check this number
+        let mut fe0f_table = BiHashMap::with_capacity(table.len() / 2);
+        table.iter()
+            .filter(|(sequence, _)| sequence.contains(&0xfe0f))
+            .map(|(sequence, _)| (sequence.clone(), sequence.iter()
+                .filter(|codepoint| **codepoint != 0xfe0f)
+                .copied()
+                .collect_vec())
+            )
+            .for_each(|(sequence_with_fe0f, sequence_without_fe0f)| {
+                fe0f_table.insert(sequence_with_fe0f, sequence_without_fe0f);
+            }
+        );
         EmojiTable {
             table,
             names: names_map,
+            fe0f_table,
             ignore_fe0f: false
         }
     }
