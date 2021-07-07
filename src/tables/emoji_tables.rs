@@ -38,6 +38,7 @@ use crate::tables::errors::ExpansionError;
 use crate::tables::online::{DATA_FILES, EMOJI_TEST};
 #[cfg(feature = "online")]
 use crate::tables::online;
+use crate::tables::utils;
 
 /// A code sequence
 pub type EmojiTableKey = Vec<u32>;
@@ -63,6 +64,8 @@ pub struct EmojiTable {
 }
 
 impl EmojiTable {
+    // -- Create new tables --
+
     /// Creates a new, empty emoji table
     pub fn new() -> Self {
         Self::new_fe0f(false)
@@ -116,6 +119,9 @@ impl EmojiTable {
         Ok(table)
     }
 
+
+    // -- Extend a table with multiple entries --
+
     /// Expands the table with the contents of an emoji table-file with  the syntax of e.g.
     /// `emoji-data.txt`.
     /// Only the emoji itself and its kind(s) is/are extended.
@@ -147,7 +153,7 @@ impl EmojiTable {
                         let end = captures.name("range_end").unwrap().as_str();
                         self.update_range(start, end, Some(kind));
                     } else if let Some(sequence) = captures.name("sequence") {
-                        self.update_emoji(Self::key_from_str(sequence.as_str()),
+                        self.update_emoji(utils::key_from_str(sequence.as_str()),
                                           Some(kind),
                                           None,
                                           None);
@@ -197,213 +203,6 @@ impl EmojiTable {
         Ok(())
     }
 
-    fn _get_description(&self, sequence: &[u32]) -> Option<String> {
-        match self.table.get(sequence) {
-            Some((_, description, _)) => description.clone(),
-            None => None,
-        }
-    }
-
-    /// Parses lines that specify a range of emoji codepoints,
-    /// like `1F3F3..1F3F5 ; Emoji #  7.0  [3] (🏳️..🏵️)    white flag..rosette`
-    /// **Note**: This will only parse single codepoint emojis (i.e. ranges for sequences are not allowed).
-    /// However, at least the official Unicode® emoji data tables only include single codepoint ranges.
-    /// Descriptions will _not_ be parsed as they would only be available for the start and end codepoint anyway.
-    ///
-    /// The table will be used to find existing kinds/descriptions
-    fn update_range(&mut self, start: &str, end: &str, kind: Option<EmojiKind>) {
-        // Start and end are already built from a regular expression that only matches hexadecimal strings
-        let start = u32::from_str_radix(start, 16).unwrap();
-        let end = u32::from_str_radix(end, 16).unwrap();
-        for codepoint in start..=end {
-            self.update_emoji(vec![codepoint], kind.clone(), None, None);
-        }
-    }
-
-    /// Updates or adds an entry in the table
-    /// # Arguments
-    /// `emoji`: The codepoint sequence for the emoji
-    /// `kind`: The emoji kind to assign for this step
-    /// `status`: Possible EmojiStatuses to add
-    /// `description`: The name of the emoji
-    fn update_emoji(&mut self,
-                    emoji: EmojiTableKey,
-                    kind: Option<EmojiKind>,
-                    description: Option<&str>,
-                    status: Option<EmojiStatus>
-    ) {
-        if self.ignore_fe0f && emoji.contains(&0xfe0f) {
-            self.update_emoji(
-                strip_fe0f(&emoji),
-                kind.clone(),
-                description,
-                status
-            );
-            self.fe0f_table.insert(emoji.clone(), strip_fe0f(&emoji));
-        }
-        let existing_entry = self.table.get_mut(&emoji);
-        if let Some((kinds, existing_description, existing_status)) = existing_entry {
-            Self::add_kind(kinds, kind);
-            Self::update_description(existing_description, description);
-            insert_in_order(existing_status, status);
-        } else {
-            let entry = (
-                // We expect that at some point the emoji will have up to like 4 EmojiKinds
-                kind.map(|kind| vec![kind]).unwrap_or_else(|| Vec::with_capacity(4)),
-                description.map(|descr| descr.to_owned()),
-                // If an emoji can have more than one EmojiStatus, it'll be probably max 2
-                status.map(|status| vec![status]).unwrap_or_else(|| Vec::with_capacity(2))
-            );
-            self.table.insert(emoji, entry);
-        }
-    }
-
-    fn update_description(old_description: &mut Option<String>, new_description: Option<&str>) {
-        if let Some(old_description) = old_description {
-            if let Some(new_description) = new_description {
-                if !new_description.trim().is_empty() {
-                    *old_description = new_description.to_owned();
-                }
-            }
-        } else {
-            *old_description = new_description.map(|description| description.to_owned());
-        }
-    }
-
-    fn add_kind(existing_kinds: &mut Vec<EmojiKind>, kind: Option<EmojiKind>) {
-        insert_in_order(existing_kinds, kind)
-    }
-
-    fn key_from_str(raw_codepoints: &str) -> EmojiTableKey {
-        lazy_static! {
-            static ref HEX_SEQUENCE: Regex = Regex::new(r"[a-fA-F0-9]+").unwrap();
-        }
-
-        let matches = HEX_SEQUENCE.find_iter(raw_codepoints);
-        matches
-            .map(|sequence| sequence.as_str())
-            .map(|sequence| u32::from_str_radix(sequence, 16).unwrap_or_default())
-            .filter(|codepoint| *codepoint > 0)
-            .collect()
-    }
-
-    /// Inserts a new key-entry pair into the table and returns the last entry if there was one.
-    /// This is simply passed on to the internal `HashMap`.
-    /// Please be aware that no name-key-mapping is inserted.
-    /// That means:
-    /// ```
-    /// use emoji_builder::tables::emoji_tables::EmojiTable;
-    ///
-    /// let name = "thinking face";
-    /// let codepoint = vec![0x1f914];
-    /// let mut table = EmojiTable::new();
-    /// table.insert(codepoint.clone(), (vec![], Some(name.to_string()), vec![]));
-    ///
-    /// // We can't find the emoji by its name!
-    /// assert_eq!(table.get_by_name(name), None);
-    /// ```
-    pub fn insert(&mut self, key: EmojiTableKey, entry: EmojiTableEntry) -> Option<EmojiTableEntry> {
-        if self.ignore_fe0f {
-            self.table.insert(strip_fe0f(&key), entry.clone())
-                .unwrap_or_default();
-        }
-        if key.contains(&0xfe0f) {
-            self.fe0f_table.insert(key.clone(), strip_fe0f(&key));
-        }
-        self.table.insert(key, entry)
-    }
-
-    /// Inserts a new name to codepoint mapping with the name normalized to lowercase and space
-    /// as a delimiter; returns the previous key that this name mapped to if there was one.
-    /// # Example
-    /// ```
-    /// use emoji_builder::tables::emoji_tables::EmojiTable;
-    ///
-    /// let name = "thinking face";
-    /// let codepoint = vec![0x1f914];
-    /// let mut table = EmojiTable::new();
-    /// // Even if this description string is the same as the name, it does not have to be.
-    /// table.insert(codepoint.clone(), (vec![], Some(name.to_string()), vec![]));
-    /// table.insert_lookup_name(name, codepoint.clone());
-    ///
-    /// // Assert that we can find an entry with the given name (and that it's the correct one)
-    /// assert_eq!(*table.get_by_name(name).unwrap().0, codepoint);
-    /// ```
-    pub fn insert_lookup_name(&mut self, name: &str, key: EmojiTableKey) -> Option<EmojiTableKey> {
-        let lookup_name = Self::normalize_lookup_name(name);
-        self.names.insert(lookup_name, key)
-    }
-
-    /// Returns the table entry for a given key
-    pub fn get<T: AsRef<EmojiTableKey>>(&self, index: &T) -> Option<&EmojiTableEntry> {
-        let index: &EmojiTableKey = index.as_ref();
-        self.table.get(index)
-    }
-
-    /// Finds an emoji by its name (this is case-insensitive and converts delimiters to the desired format)
-    /// # Examples
-    /// ```
-    /// use emoji_builder::tables::emoji_tables::EmojiTable;
-    ///
-    /// let mut table = EmojiTable::new();
-    /// let key = vec![0x1f914];
-    /// let entry = (vec![], Some(String::from("Thinking")), vec![]);
-    /// table.insert(key.clone(), entry.clone());
-    /// table.insert_lookup_name("ThInKiNg_FaCe", key.clone());
-    /// assert_eq!(Some((key.clone(), &entry)), table.get_by_name("tHiNkIng-fAcE"));
-    ///
-    /// // Emojis themselves are already valid lookup names
-    /// assert_eq!(Some((key.clone(), &entry)), table.get_by_name("🤔"));
-    /// table.insert_lookup_name("thinkin'", key.clone());
-    /// // We don't overwrite the old mapping, so this still works
-    /// assert_eq!(Some((key.clone(), &entry)), table.get_by_name("tHiNkIng-fAcE"));
-    /// assert_eq!(Some((key.clone(), &entry)), table.get_by_name("thinkin"));
-    /// ```
-    pub fn get_by_name(&self, name: &str) -> Option<(EmojiTableKey, &EmojiTableEntry)> {
-        // First we'll try to look up the string itself, because it might be an emoji
-        let chars = name.chars()
-            .map(|character| character as u32)
-            .collect_vec();
-        if let Some(entry) = self.table.get(&chars) {
-            Some((chars, entry))
-        } else {
-            let lookup_name = Self::normalize_lookup_name(name);
-            if let Some(codepoint) = self.names.get(&lookup_name) {
-                self.table.get(codepoint).map(|entry| (codepoint.clone(), entry))
-            } else {
-                None
-            }
-        }
-    }
-
-    /// Converts names to the format used in the lookup table for names.
-    ///
-    /// This method here might cause some issues when dealing with names with hyphens:
-    /// For example emoji U+1F60D has the name "smiling face with heart-eyes" which is converted
-    /// to "smiling face with heart eyes" here. Therefore these lookup names should not be used as
-    /// display names/descriptions.
-    ///
-    /// Also some special characters like `:` or `,` will be removed in order to allow simpler file
-    /// names.
-    pub fn normalize_lookup_name(name: &str) -> String {
-        lazy_static! {
-            static ref DELIMITERS: Regex = Regex::new(r"[-_. ]").unwrap();
-            static ref REMOVED: Regex = Regex::new(r#"[,*\\/:'"()]"#).unwrap();
-        }
-        (&*DELIMITERS as &Regex).split(&REMOVED.replace_all(name, "")).join(" ").to_lowercase()
-    }
-
-    /// Returns the size of the table
-    pub fn len(&self) -> usize {
-        self.table.len()
-    }
-
-    /// Checks whether the table is empty
-    pub fn is_empty(&self) -> bool {
-        self.table.is_empty()
-    }
-
-
     /// Uses the names of the emoji-test.txt files.
     /// These seem to be more suitable than emoji-data.txt as they don't include any emoji character
     /// ranges.
@@ -429,7 +228,7 @@ impl EmojiTable {
                 // Try to match the line
                 if let Some(captures) = (&*EMOJI_TEST_REGEX as &Regex).captures(line) {
                     // Extract information
-                    let codepoints: Vec<_> = Self::key_from_str(captures.get(1).unwrap().as_str());
+                    let codepoints: Vec<_> = utils::key_from_str(captures.get(1).unwrap().as_str());
                     let status = captures.get(5).unwrap().as_str();
                     let status = EmojiStatus::from_str(status);
                     let _emoji = captures.get(6);
@@ -493,11 +292,236 @@ impl EmojiTable {
         Ok(())
     }
 
+    pub fn extend(&mut self, other: EmojiTable) {
+        if !self.ignore_fe0f {
+            self.table.extend(other.table.into_iter());
+        } else {
+            let other_table_no_fe0f = other.table.iter()
+                .filter_map(|(key, entry)| if key.contains(&0xfe0f) {
+                    Some((key.clone(), entry.clone()))
+                } else {
+                    None
+                }
+                ).collect_vec();
+
+            let entries = other.table.into_iter().chain(other_table_no_fe0f);
+            self.table.extend(entries);
+        }
+
+        // Update the FE0F-table
+        other.fe0f_table.into_iter()
+            .for_each(|(with_fe0f, without_fe0f)| {
+                self.fe0f_table.insert(with_fe0f, without_fe0f);
+            }
+            );
+        self.names.extend(other.names.into_iter());
+    }
+
+    pub fn extend_preserve_own(&mut self, other: EmojiTable) {
+        if !self.ignore_fe0f {
+            self.table = other.table.into_iter().chain(self.table.drain()).collect();
+        } else {
+            let other_table_no_fe0f = other.table.iter()
+                .filter_map(|(key, entry)| if key.contains(&0xfe0f) {
+                    Some((key.clone(), entry.clone()))
+                } else {
+                    None
+                }
+                ).collect_vec();
+
+            let entries = other.table.into_iter().chain(other_table_no_fe0f);
+            self.table = entries.chain(self.table.drain()).collect();
+        }
+
+        // Update the FE0F-table
+        other.fe0f_table.into_iter()
+            .for_each(|(with_fe0f, without_fe0f)|
+                self.fe0f_table
+                    .insert_no_overwrite(with_fe0f, without_fe0f)
+                    .unwrap_or_default()
+            );
+
+        self.names = other.names.into_iter().chain(self.names.drain().into_iter()).collect();
+    }
+
+
+    // -- Add single items --
+
+    /// Inserts a new key-entry pair into the table and returns the last entry if there was one.
+    /// This is simply passed on to the internal `HashMap`.
+    /// Please be aware that no name-key-mapping is inserted.
+    /// That means:
+    /// ```
+    /// use emoji_builder::tables::emoji_tables::EmojiTable;
+    ///
+    /// let name = "thinking face";
+    /// let codepoint = vec![0x1f914];
+    /// let mut table = EmojiTable::new();
+    /// table.insert(codepoint.clone(), (vec![], Some(name.to_string()), vec![]));
+    ///
+    /// // We can't find the emoji by its name!
+    /// assert_eq!(table.get_by_name(name), None);
+    /// ```
+    pub fn insert(&mut self, key: EmojiTableKey, entry: EmojiTableEntry) -> Option<EmojiTableEntry> {
+        if self.ignore_fe0f {
+            self.table.insert(utils::strip_fe0f(&key), entry.clone())
+                .unwrap_or_default();
+        }
+        if key.contains(&0xfe0f) {
+            self.fe0f_table.insert(key.clone(), utils::strip_fe0f(&key));
+        }
+        self.table.insert(key, entry)
+    }
+
+    /// Inserts a new name to codepoint mapping with the name normalized to lowercase and space
+    /// as a delimiter; returns the previous key that this name mapped to if there was one.
+    /// # Example
+    /// ```
+    /// use emoji_builder::tables::emoji_tables::EmojiTable;
+    ///
+    /// let name = "thinking face";
+    /// let codepoint = vec![0x1f914];
+    /// let mut table = EmojiTable::new();
+    /// // Even if this description string is the same as the name, it does not have to be.
+    /// table.insert(codepoint.clone(), (vec![], Some(name.to_string()), vec![]));
+    /// table.insert_lookup_name(name, codepoint.clone());
+    ///
+    /// // Assert that we can find an entry with the given name (and that it's the correct one)
+    /// assert_eq!(*table.get_by_name(name).unwrap().0, codepoint);
+    /// ```
+    pub fn insert_lookup_name(&mut self, name: &str, key: EmojiTableKey) -> Option<EmojiTableKey> {
+        let lookup_name = utils::normalize_lookup_name(name);
+        self.names.insert(lookup_name, key)
+    }
+
+
+    // -- Update single items --
+
+    /// Parses lines that specify a range of emoji codepoints,
+    /// like `1F3F3..1F3F5 ; Emoji #  7.0  [3] (🏳️..🏵️)    white flag..rosette`
+    /// **Note**: This will only parse single codepoint emojis (i.e. ranges for sequences are not allowed).
+    /// However, at least the official Unicode® emoji data tables only include single codepoint ranges.
+    /// Descriptions will _not_ be parsed as they would only be available for the start and end codepoint anyway.
+    ///
+    /// The table will be used to find existing kinds/descriptions
+    fn update_range(&mut self, start: &str, end: &str, kind: Option<EmojiKind>) {
+        // Start and end are already built from a regular expression that only matches hexadecimal strings
+        let start = u32::from_str_radix(start, 16).unwrap();
+        let end = u32::from_str_radix(end, 16).unwrap();
+        for codepoint in start..=end {
+            self.update_emoji(vec![codepoint], kind.clone(), None, None);
+        }
+    }
+
+    /// Updates or adds an entry in the table
+    /// # Arguments
+    /// `emoji`: The codepoint sequence for the emoji
+    /// `kind`: The emoji kind to assign for this step
+    /// `status`: Possible EmojiStatuses to add
+    /// `description`: The name of the emoji
+    fn update_emoji(&mut self,
+                    emoji: EmojiTableKey,
+                    kind: Option<EmojiKind>,
+                    description: Option<&str>,
+                    status: Option<EmojiStatus>
+    ) {
+        if self.ignore_fe0f && emoji.contains(&0xfe0f) {
+            self.update_emoji(
+                utils::strip_fe0f(&emoji),
+                kind.clone(),
+                description,
+                status
+            );
+            self.fe0f_table.insert(emoji.clone(), utils::strip_fe0f(&emoji));
+        }
+        let existing_entry = self.table.get_mut(&emoji);
+        if let Some((kinds, existing_description, existing_status)) = existing_entry {
+            utils::add_kind(kinds, kind);
+            utils::update_description(existing_description, description);
+            utils::insert_in_order(existing_status, status);
+        } else {
+            let entry = (
+                // We expect that at some point the emoji will have up to like 4 EmojiKinds
+                kind.map(|kind| vec![kind]).unwrap_or_else(|| Vec::with_capacity(4)),
+                description.map(|descr| descr.to_owned()),
+                // If an emoji can have more than one EmojiStatus, it'll be probably max 2
+                status.map(|status| vec![status]).unwrap_or_else(|| Vec::with_capacity(2))
+            );
+            self.table.insert(emoji, entry);
+        }
+    }
+
+
+    // -- Get information on items --
+
+    fn _get_description(&self, sequence: &[u32]) -> Option<String> {
+        match self.table.get(sequence) {
+            Some((_, description, _)) => description.clone(),
+            None => None,
+        }
+    }
+
+    /// Returns the table entry for a given key
+    pub fn get<T: AsRef<EmojiTableKey>>(&self, index: &T) -> Option<&EmojiTableEntry> {
+        let index: &EmojiTableKey = index.as_ref();
+        self.table.get(index)
+    }
+
+    /// Finds an emoji by its name (this is case-insensitive and converts delimiters to the desired format)
+    /// # Examples
+    /// ```
+    /// use emoji_builder::tables::emoji_tables::EmojiTable;
+    ///
+    /// let mut table = EmojiTable::new();
+    /// let key = vec![0x1f914];
+    /// let entry = (vec![], Some(String::from("Thinking")), vec![]);
+    /// table.insert(key.clone(), entry.clone());
+    /// table.insert_lookup_name("ThInKiNg_FaCe", key.clone());
+    /// assert_eq!(Some((key.clone(), &entry)), table.get_by_name("tHiNkIng-fAcE"));
+    ///
+    /// // Emojis themselves are already valid lookup names
+    /// assert_eq!(Some((key.clone(), &entry)), table.get_by_name("🤔"));
+    /// table.insert_lookup_name("thinkin'", key.clone());
+    /// // We don't overwrite the old mapping, so this still works
+    /// assert_eq!(Some((key.clone(), &entry)), table.get_by_name("tHiNkIng-fAcE"));
+    /// assert_eq!(Some((key.clone(), &entry)), table.get_by_name("thinkin"));
+    /// ```
+    pub fn get_by_name(&self, name: &str) -> Option<(EmojiTableKey, &EmojiTableEntry)> {
+        // First we'll try to look up the string itself, because it might be an emoji
+        let chars = name.chars()
+            .map(|character| character as u32)
+            .collect_vec();
+        if let Some(entry) = self.table.get(&chars) {
+            Some((chars, entry))
+        } else {
+            let lookup_name = utils::normalize_lookup_name(name);
+            if let Some(codepoint) = self.names.get(&lookup_name) {
+                self.table.get(codepoint).map(|entry| (codepoint.clone(), entry))
+            } else {
+                None
+            }
+        }
+    }
+
     /// A helper function to get emojis by their name directly
     #[cfg(test)]
     pub fn get_codepoint_by_name(&self, name: &str) -> Vec<u32> {
         self.get_by_name(name).unwrap().0.clone()
     }
+
+
+    // -- Get general information --
+
+    /// Returns the size of the table
+    pub fn len(&self) -> usize {
+        self.table.len()
+    }
+
+    /// Checks whether the table is empty
+    pub fn is_empty(&self) -> bool {
+        self.table.is_empty()
+    }
+
 
     // https://stackoverflow.com/a/34969944
     /// Validates whether all emojis from this table can be found in a collection of emojis and vice versa.
@@ -566,74 +590,10 @@ impl EmojiTable {
         )
     }
 
-    pub fn extend(&mut self, other: EmojiTable) {
-        if !self.ignore_fe0f {
-            self.table.extend(other.table.into_iter());
-        } else {
-            let other_table_no_fe0f = other.table.iter()
-                .filter_map(|(key, entry)| if key.contains(&0xfe0f) {
-                    Some((key.clone(), entry.clone()))
-                } else {
-                    None
-                }
-            ).collect_vec();
-
-            let entries = other.table.into_iter().chain(other_table_no_fe0f);
-            self.table.extend(entries);
-        }
-
-        // Update the FE0F-table
-        other.fe0f_table.into_iter()
-            .for_each(|(with_fe0f, without_fe0f)| {
-                self.fe0f_table.insert(with_fe0f, without_fe0f);
-                }
-            );
-        self.names.extend(other.names.into_iter());
-    }
-
-    pub fn extend_preserve_own(&mut self, other: EmojiTable) {
-        if !self.ignore_fe0f {
-            self.table = other.table.into_iter().chain(self.table.drain()).collect();
-        } else {
-            let other_table_no_fe0f = other.table.iter()
-                .filter_map(|(key, entry)| if key.contains(&0xfe0f) {
-                    Some((key.clone(), entry.clone()))
-                } else {
-                    None
-                }
-            ).collect_vec();
-
-            let entries = other.table.into_iter().chain(other_table_no_fe0f);
-            self.table = entries.chain(self.table.drain()).collect();
-        }
-
-        // Update the FE0F-table
-        other.fe0f_table.into_iter()
-            .for_each(|(with_fe0f, without_fe0f)|
-                self.fe0f_table
-                    .insert_no_overwrite(with_fe0f, without_fe0f)
-                    .unwrap_or_default()
-            );
-
-        self.names = other.names.into_iter().chain(self.names.drain().into_iter()).collect();
-    }
 }
 
-fn strip_fe0f(codepoint_with_fe0f: &[u32]) -> EmojiTableKey {
-    codepoint_with_fe0f.iter()
-        .filter(|codepoint| **codepoint != 0xfe0f)
-        .copied()
-        .collect()
-}
 
-fn insert_in_order<T>(existing: &mut Vec<T>, new: Option<T>)
-    where T: Eq + Ord {
-    if let Some(new) = new {
-        if !existing.contains(&new) {
-            existing.insert(existing.binary_search(&new).unwrap_err(), new);
-        }
-    }
-}
+// -- Trait impls --
 
 impl Default for EmojiTable {
     fn default() -> Self {
@@ -665,7 +625,7 @@ impl From<HashMap<EmojiTableKey, EmojiTableEntry>> for EmojiTable {
             .for_each(|(sequence_with_fe0f, sequence_without_fe0f)| {
                 fe0f_table.insert(sequence_with_fe0f, sequence_without_fe0f);
             }
-        );
+            );
         EmojiTable {
             table,
             names: names_map,
