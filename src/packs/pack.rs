@@ -232,6 +232,9 @@ fn load_emojis_from_source<S>(
     (emojis, emoji_errors, source_errors)
 }
 
+// When compiling this without the online-feature, the mut for read_errors becomes unused.
+// It would however be overly complicated to conditionally remove it here
+#[allow(unused_mut)]
 fn load_tables<S>(table_files: Vec<PathBuf>,
                   test_files: Vec<PathBuf>,
                   source: &S,
@@ -248,24 +251,21 @@ fn load_tables<S>(table_files: Vec<PathBuf>,
         .map(|path| (true, path));
 
     // TODO: Parallelize
-    // When compiling this without the online-feature, the mut becomes unused.
-    // It would however be overly complicated to conditionally remove it here
-    #[allow(unused_mut)]
-        let mut read_errors: Vec<_> = table_paths.chain(test_paths)
-        .map(|(is_test, path)| (is_test, source.request(path)))
-        .map(|(is_test, reader)| (is_test, reader.map(BufReader::new)))
-        .filter_map(|(is_test, reader)| match reader {
-            Ok(reader) => {
-                    if is_test {
-                        table.expand_descriptions_from_test_data(reader);
-                    } else {
-                        table.expand(reader);
-                    }
-                    None
-                },
-            Err(error) => Some(error)
-        })
-        .collect();
+    let mut read_errors: Vec<_> = table_paths.chain(test_paths)
+    .map(|(is_test, path)| (is_test, source.request(path)))
+    .map(|(is_test, reader)| (is_test, reader.map(BufReader::new)))
+    .filter_map(|(is_test, reader)| match reader {
+        Ok(reader) => {
+                if is_test {
+                    table.expand_descriptions_from_test_data(reader);
+                } else {
+                    table.expand(reader);
+                }
+                None
+            },
+        Err(error) => Some(error)
+    })
+    .collect();
 
     let mut expansion_error = None;
 
@@ -277,6 +277,17 @@ fn load_tables<S>(table_files: Vec<PathBuf>,
                 expansion_error = Some(error);
             }
         }
+    }
+
+    // If we explicitly disabled offline mode, issue a warning if online mode is not enabled
+    #[cfg(not(feature = "online"))]
+    if !offline.unwrap_or(true) {
+        warn!("Online mode is not available.");
+    }
+
+    #[cfg(not(feature = "online"))]
+    if unicode_version.is_some() {
+        info!("Version is not used due to missing online mode.");
     }
 
     if !read_errors.is_empty() || expansion_error.is_some() {

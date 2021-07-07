@@ -24,17 +24,20 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Error};
 use std::path::Path;
 use std::str::FromStr;
-#[cfg(feature = "online")]
-use std::sync::RwLock;
 
+use bimap::BiHashMap;
 use itertools::Itertools;
 use regex::Regex;
 
 use crate::emojis::emoji::Emoji;
 use crate::emojis::emoji_kind::EmojiKind;
 use crate::emojis::emoji_status::EmojiStatus;
+#[cfg(feature = "online")]
 use crate::tables::errors::ExpansionError;
-use bimap::BiHashMap;
+#[cfg(feature = "online")]
+use crate::tables::online::{DATA_FILES, EMOJI_TEST};
+#[cfg(feature = "online")]
+use crate::tables::online;
 
 /// A code sequence
 pub type EmojiTableKey = Vec<u32>;
@@ -144,7 +147,7 @@ impl EmojiTable {
                         let end = captures.name("range_end").unwrap().as_str();
                         self.update_range(start, end, Some(kind));
                     } else if let Some(sequence) = captures.name("sequence") {
-                        self.update_emoji(Self::get_codepoint_sequence(sequence.as_str()),
+                        self.update_emoji(Self::key_from_str(sequence.as_str()),
                                           Some(kind),
                                           None,
                                           None);
@@ -236,6 +239,7 @@ impl EmojiTable {
                 description,
                 status
             );
+            self.fe0f_table.insert(emoji.clone(), strip_fe0f(&emoji));
         }
         let existing_entry = self.table.get_mut(&emoji);
         if let Some((kinds, existing_description, existing_status)) = existing_entry {
@@ -270,7 +274,7 @@ impl EmojiTable {
         insert_in_order(existing_kinds, kind)
     }
 
-    fn get_codepoint_sequence(raw_codepoints: &str) -> EmojiTableKey {
+    fn key_from_str(raw_codepoints: &str) -> EmojiTableKey {
         lazy_static! {
             static ref HEX_SEQUENCE: Regex = Regex::new(r"[a-fA-F0-9]+").unwrap();
         }
@@ -302,6 +306,9 @@ impl EmojiTable {
         if self.ignore_fe0f {
             self.table.insert(strip_fe0f(&key), entry.clone())
                 .unwrap_or_default();
+        }
+        if key.contains(&0xfe0f) {
+            self.fe0f_table.insert(key.clone(), strip_fe0f(&key));
         }
         self.table.insert(key, entry)
     }
@@ -422,7 +429,7 @@ impl EmojiTable {
                 // Try to match the line
                 if let Some(captures) = (&*EMOJI_TEST_REGEX as &Regex).captures(line) {
                     // Extract information
-                    let codepoints: Vec<_> = Self::get_codepoint_sequence(captures.get(1).unwrap().as_str());
+                    let codepoints: Vec<_> = Self::key_from_str(captures.get(1).unwrap().as_str());
                     let status = captures.get(5).unwrap().as_str();
                     let status = EmojiStatus::from_str(status);
                     let _emoji = captures.get(6);
@@ -440,35 +447,6 @@ impl EmojiTable {
                 }
             }
         };
-    }
-
-    #[cfg(feature = "online")]
-    const EMOJI_DATA: &'static str = "emoji-data.txt";
-    #[cfg(feature = "online")]
-    const EMOJI_SEQUENCES: &'static str = "emoji-sequences.txt";
-    #[cfg(feature = "online")]
-    const EMOJI_ZWJ_SEQUENCES: &'static str = "emoji-zwj-sequences.txt";
-    #[cfg(feature = "online")]
-    const EMOJI_VARIATION_SEQUENCES: &'static str = "emoji-variation-sequences.txt";
-    #[cfg(feature = "online")]
-    const EMOJI_TEST: &'static str = "emoji-test.txt";
-    #[cfg(feature = "online")]
-    const DATA_FILES: [&'static str; 3] = [
-        Self::EMOJI_DATA,
-        Self::EMOJI_SEQUENCES,
-        Self::EMOJI_ZWJ_SEQUENCES
-    ];
-
-
-
-    /// This function is <del>equivalent to</del> creating an `EmojiTable` and directly calling `expand_all_online` on it.`
-    #[cfg(feature = "online")]
-    pub fn load_online(version: (u32, u32)) -> Result<EmojiTable, ExpansionError> {
-        let mut table = EmojiTable::new();
-        match table.expand_all_online(version) {
-            Ok(_) => Ok(table),
-            Err(error) => Err(error)
-        }
     }
 
     /// Populates the table with fresh data from the internet for the given version.
@@ -489,7 +467,7 @@ impl EmojiTable {
 
         let test_expansion_result = self.expand_descriptions_from_test_online(&client, version);
 
-        let errors: Vec<_> = Self::DATA_FILES.iter()
+        let errors: Vec<_> = DATA_FILES.iter()
             .map(|file| self.expand_data_online(&client, version, file))
             .chain(vec![test_expansion_result])
             .filter_map(|result| result.err())
@@ -503,61 +481,16 @@ impl EmojiTable {
 
     #[cfg(feature = "online")]
     fn expand_data_online(&mut self, client: &reqwest::blocking::Client, version: (u32, u32), file: &'static str) -> Result<(), ExpansionError> {
-        let reader = Self::get_data_file_online(client, version, file)?;
+        let reader = online::get_data_file_online(client, version, file)?;
         self.expand(reader);
         Ok(())
     }
 
     #[cfg(feature = "online")]
-    #[inline]
-    fn get_data_file_online(client: &reqwest::blocking::Client, version: (u32, u32), file: &'static str) -> Result<std::io::Cursor<bytes::Bytes>, reqwest::Error> {
-        // Check if we can return the file from the cache already
-        let cache = (&*TABLE_CACHE as &TableCache).read();
-        if let Ok(cache) = cache {
-            if let Some(cached_files) = cache.get(&version) {
-                if let Some(cached) = cached_files.get(file) {
-                    return Ok(std::io::Cursor::new(cached.clone()));
-                }
-            }
-        }
-        let request = client.get(&Self::build_url(version, file)).send();
-        let bytes = request?.bytes()?;
-
-        // Insert data into the cache
-        let cache = (&*TABLE_CACHE as &TableCache).write();
-        if let Ok(mut cache) = cache {
-            if let Some(cached_files) = cache.get_mut(&version) {
-                // We need to check again here, since we didn't hold the Lock for some time
-                if !cached_files.contains_key(file) {
-                    cached_files.insert(String::from(file), bytes.clone());
-                }
-            } else {
-                // There are about 4 files for each version, so having 8 should be sufficient
-                let mut cached_files = HashMap::with_capacity(8);
-                cached_files.insert(String::from(file), bytes.clone());
-                cache.insert(version, cached_files);
-            }
-        }
-
-        Ok(std::io::Cursor::new(bytes))
-    }
-
-    #[cfg(feature = "online")]
     fn expand_descriptions_from_test_online(&mut self, client: &reqwest::blocking::Client, version: (u32, u32)) -> Result<(), ExpansionError> {
-        let reader = Self::get_data_file_online(client, version, Self::EMOJI_TEST)?;
+        let reader = online::get_data_file_online(client, version, EMOJI_TEST)?;
         self.expand_descriptions_from_test_data(reader);
         Ok(())
-    }
-
-    /// A simple helper function to build the URLs for the different files.
-    #[cfg(feature = "online")]
-    #[inline]
-    fn build_url(version: (u32, u32), file: &'static str) -> String {
-        if version.0 >= 13 && [Self::EMOJI_DATA, Self::EMOJI_VARIATION_SEQUENCES].contains(&file) {
-            format!("https://unicode.org/Public/{}.0.0/ucd/emoji/{}", version.0, file)
-        } else {
-            format!("https://unicode.org/Public/emoji/{}.{}/{}", version.0, version.1, file)
-        }
     }
 
     /// A helper function to get emojis by their name directly
@@ -700,9 +633,13 @@ impl From<HashMap<EmojiTableKey, EmojiTableEntry>> for EmojiTable {
             .filter_map(|(codepoint, (_, name, _))| name.as_ref().map(|name| (name.clone(), codepoint.clone())))
             .collect();
         // TODO: Make this optional?
-        // We just assume here, that we'll roughly have every second codepoint being a sequence with VS-16
-        // TODO: Check this number
-        let mut fe0f_table = BiHashMap::with_capacity(table.len() / 2);
+        // When considering Emoji 13.0, we have (in total, without Emoji_Presentation, etc.) ~3000 lines with entries.
+        // 1060 of them contain FE0F, which makes ~1/3 of the entries.
+        // However, this will actually be a smaller fraction, since one line can contain a whole range
+        // of emojis, resulting in many more emojis/single codepoint-"sequences" without FE0F.
+        // As a result, 1/3 should be more than large enough, so our map will probably never need to
+        // reallocate
+        let mut fe0f_table = BiHashMap::with_capacity(table.len() / 3);
         table.iter()
             .filter(|(sequence, _)| sequence.contains(&0xfe0f))
             .map(|(sequence, _)| (sequence.clone(), sequence.iter()
@@ -733,13 +670,4 @@ impl AsRef<HashMap<EmojiTableKey, EmojiTableEntry>> for EmojiTable {
     fn as_ref(&self) -> &HashMap<Vec<u32>, EmojiTableEntry, RandomState> {
         &self.table
     }
-}
-
-type TableCache = RwLock<HashMap<(u32, u32), HashMap<String, bytes::Bytes>>>;
-
-// 14 Unicode/emoji main versions * 2 minor versions ~= 32 versions we could possibly cache
-#[cfg(feature = "online")]
-lazy_static! {
-    static ref TABLE_CACHE: TableCache =
-        RwLock::new(HashMap::with_capacity(32));
 }
