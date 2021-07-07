@@ -581,6 +581,13 @@ impl EmojiTable {
             let entries = other.table.into_iter().chain(other_table_no_fe0f);
             self.table.extend(entries);
         }
+
+        // Update the FE0F-table
+        other.fe0f_table.into_iter()
+            .for_each(|(with_fe0f, without_fe0f)| {
+                self.fe0f_table.insert(with_fe0f, without_fe0f);
+                }
+            );
         self.names.extend(other.names.into_iter());
     }
 
@@ -599,6 +606,14 @@ impl EmojiTable {
             let entries = other.table.into_iter().chain(other_table_no_fe0f);
             self.table = entries.chain(self.table.drain()).collect();
         }
+
+        // Update the FE0F-table
+        other.fe0f_table.into_iter()
+            .for_each(|(with_fe0f, without_fe0f)|
+                self.fe0f_table
+                    .insert_no_overwrite(with_fe0f, without_fe0f)
+                    .unwrap_or_default()
+            );
 
         self.names = other.names.into_iter().chain(self.names.drain().into_iter()).collect();
     }
