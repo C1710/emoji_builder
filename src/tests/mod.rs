@@ -18,3 +18,14 @@ mod emoji_test;
 mod utils_test;
 mod builder_test;
 mod integration;
+
+// From https://github.com/env-logger-rs/env_logger/blob/main/examples/in_tests.rs
+pub fn init_logger() {
+    let _ = env_logger::builder()
+        // Include all events in tests
+        .filter_level(log::LevelFilter::max())
+        // Ensure events are captured by `cargo test`
+        .is_test(true)
+        // Ignore errors initializing the logger if tests race to configure it
+        .try_init();
+}

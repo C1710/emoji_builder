@@ -49,6 +49,7 @@ use emoji_builder::changes::FileHashes;
 const LICENSES: include_dir::Dir = include_dir!("licenses");
 
 fn main() {
+    env_logger::init();
     build::<Blobmoji>();
 }
 
@@ -248,12 +249,6 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
         .get_matches();
 
     let _hashes = FileHashes::new();
-
-    stderrlog::new()
-        .module(module_path!())
-        .modules(log_modules)
-        .verbosity(matches.occurrences_of("verbose") as usize)
-        .init().unwrap();
 
     if let Some(matches) = matches.subcommand_matches("licenses") {
         let print = matches.is_present("print");
