@@ -1,11 +1,13 @@
-use crate::tables::emoji_tables::EmojiTable;
+
 use crate::emojis::emoji_kind::EmojiKind;
 use regex::Regex;
+use crate::tables::regexes::{data_regex, test_regex};
+use crate::tables::online::load_online_table;
 
 #[cfg(feature = "online")]
 #[test]
 fn test_online() {
-    let table = EmojiTable::load_online((13, 0)).unwrap();
+    let table = load_online_table((13, 0)).unwrap();
 
     let kissing_face = vec![0x1f617];
     let smiling_face = vec![0x263a, 0xfe0f];
@@ -37,18 +39,14 @@ fn test_online() {
 
 #[test]
 fn print_regexes() {
-    lazy_static! {
-            static ref HEX_SEQUENCE: Regex = Regex::new(r"[a-fA-F0-9]{1,8}").unwrap();
-            static ref RANGE: Regex = Regex::new(&format!(r"(?P<range>(?P<range_start>{hex})\.\.(?P<range_end>{hex}))", hex = &*HEX_SEQUENCE)).unwrap();
-            static ref SEQUENCE: Regex = Regex::new(&format!(r"(?P<sequence>({hex})(\s+({hex}))*)", hex = &*HEX_SEQUENCE)).unwrap();
-            static ref EMOJI_REGEX: Regex = Regex::new(&format!(r"(?P<codepoints>{}|{})", &*RANGE, &*SEQUENCE)).unwrap();
-            static ref EMOJI_KIND_REGEX: Regex = Regex::new(&format!(r"(?P<kind>{})", EmojiKind::regex())).unwrap();
-            static ref DATA_REGEX: Regex = Regex::new(&format!(r"^{}\s*;\s*{}\s*(;(?P<name>.*)\s*)?(#.*)?$", &*EMOJI_REGEX, &*EMOJI_KIND_REGEX)).unwrap();
-    }
+    let data_regex = data_regex();
+    let test_regex = test_regex();
 
     let regexr_incompatible = Regex::new(r"(\?P<[^>]+>)|(\(\?i\))").unwrap();
-    let regex = format!("{}", &*DATA_REGEX);
-    let regex = regexr_incompatible.replace_all(&regex, "");
+    let data_regex = format!("{}", data_regex);
+    let test_regex = format!("{}", test_regex);
+    let data_regex = regexr_incompatible.replace_all(&data_regex, "");
+    let test_regex = regexr_incompatible.replace_all(&test_regex, "");
 
-    println!("{}", regex);
+    println!("{}\n{}", data_regex, test_regex);
 }

@@ -121,7 +121,6 @@ impl EmojiKind {
         let postfixes = vec![
             format!("({})", sequences),
             format!("(Modifier({delim}Base)?)", delim = EmojiKind::DELIMITER),
-            String::from("Component"),
             String::from("Presentation"),
             format!("extended{delim}pictographic", delim = EmojiKind::DELIMITER)
         ].iter().join("|");
@@ -129,6 +128,13 @@ impl EmojiKind {
         let advanced_emojis = format!(r"(Emoji{delim})?({postfixes})",
             delim = EmojiKind::DELIMITER,
             postfixes = postfixes
+        );
+
+        // Component needs an "Emoji"-prefix, as we would otherwise risk an overlap with the emoji-
+        // test-regex.
+        let advanced_emojis = format!(r"({advanced_emojis})|Emoji{delim}Component",
+            advanced_emojis = advanced_emojis,
+            delim = EmojiKind::DELIMITER
         );
 
         let regex = format!(r"(?i)(RGI{delim})?(({advanced_emojis})|((Basic{delim})?Emoji))",

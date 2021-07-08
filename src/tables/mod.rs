@@ -2,6 +2,8 @@
 pub mod emoji_tables;
 pub mod errors;
 mod utils;
+mod regexes;
+pub mod prototype;
 #[cfg(feature = "online")]
 pub mod online;
 #[cfg(test)]

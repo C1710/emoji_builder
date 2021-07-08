@@ -34,7 +34,7 @@ pub const DATA_FILES: [&str; 3] = [
 ];
 
 /// This function is <del>equivalent to</del> creating an `EmojiTable` and directly calling `expand_all_online` on it.`
-pub fn load_online(version: (u32, u32)) -> Result<EmojiTable, ExpansionError> {
+pub fn load_online_table(version: (u32, u32)) -> Result<EmojiTable, ExpansionError> {
     let mut table = EmojiTable::new();
     match table.expand_all_online(version) {
         Ok(_) => Ok(table),

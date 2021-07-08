@@ -3,11 +3,14 @@ use std::path::PathBuf;
 use crate::emojis::emoji::Emoji;
 use crate::loadables::loadable::Loadable;
 use crate::loadables::sources::fs_source::FsSource;
+use crate::tests::init_logger;
 
 const TEST_PACK: &str = "test_files/packs/basic_pack/pack.json";
 
 #[test]
 fn test_load_pack() {
+    init_logger();
+
     let path = PathBuf::from(TEST_PACK);
     let source = FsSource::new(path).unwrap();
     let pack = EmojiPack::load(source).unwrap();

@@ -116,7 +116,7 @@ impl EmojiPack {
             }
         }
         self.unicode_version = max(self.unicode_version, other.unicode_version);
-        self.table.extend(other.table);
+        self.table += other.table;
         self.emojis.extend(other.emojis.into_iter());
         self.config.extend(other.config.into_iter());
     }
@@ -129,7 +129,7 @@ impl EmojiPack {
             }
         }
         self.unicode_version = max(self.unicode_version, other.unicode_version);
-        self.table.extend(other.table.clone());
+        self.table += other.table.clone();
         self.emojis.extend(other.emojis.iter().cloned());
         self.config.extend(other.config.iter()
             .map(|(key, value)| (key.clone(), value.clone()))
@@ -137,7 +137,7 @@ impl EmojiPack {
     }
 
     pub fn push_low_importance(&mut self, other: EmojiPack) {
-        self.table.extend_preserve_own(other.table);
+        self.table = &other.table + &self.table;
         self.unicode_version = max(self.unicode_version, other.unicode_version);
         self.emojis = other.emojis.into_iter().chain(self.emojis.drain().into_iter()).collect();
         self.config = other.config.into_iter().chain(self.config.drain().into_iter()).collect();
