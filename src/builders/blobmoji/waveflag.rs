@@ -62,6 +62,7 @@ pub fn waveflag(content: &[u8], width: usize, height: u32, added_lines: usize) -
     (content, width as u32, height + added_lines as u32)
 }
 
+// TODO: Update doc
 /// A simple function that mixes two RGBA pixels with a given factor and writes them to a third one.
 /// # How does it work?
 /// The antialiasing works as follows: The offset-function calculates a floating point
@@ -72,7 +73,7 @@ pub fn waveflag(content: &[u8], width: usize, height: u32, added_lines: usize) -
 /// target-pixel's "perspective").
 /// It's different to the "normal" blend mode found in image editors as it doesn't account for the
 /// alpha values of the two pixels when mixing their colors. This makes the function much easier
-/// and faster, with the cost of mixing in black when mixing with completely transparent pixels
+/// and possibly faster, with the cost of mixing in black when mixing with completely transparent pixels
 /// from the padding (or from the source picture) which have their red, green and blue channels set
 /// to 0 (which is black).
 #[inline]
@@ -83,11 +84,28 @@ fn blend(
     opacity: f64,
 ) {
     unsafe {
-        *px_o.add(0) = (px_s[0] as f64 * opacity + px_a[0] as f64 * (1.0 - opacity)) as u8;
-        *px_o.add(1) = (px_s[1] as f64 * opacity + px_a[1] as f64 * (1.0 - opacity)) as u8;
-        *px_o.add(2) = (px_s[2] as f64 * opacity + px_a[2] as f64 * (1.0 - opacity)) as u8;
-        *px_o.add(3) = (px_s[3] as f64 * opacity + px_a[3] as f64 * (1.0 - opacity)) as u8;
+        // Don't blend colors if one of the alpha channels is 0; in that case only blend the
+        // alpha value, as otherwise we would mix with black
+        if px_a[3] == 0 {
+            *px_o.add(0) = px_s[0];
+            *px_o.add(1) = px_s[1];
+            *px_o.add(2) = px_s[2];
+        } else if px_s[3] == 0 {
+            *px_o.add(0) = px_a[0];
+            *px_o.add(1) = px_a[1];
+            *px_o.add(2) = px_a[2];
+        } else {
+            *px_o.add(0) = blend_subpixel(px_a[0], px_s[0], opacity);
+            *px_o.add(1) = blend_subpixel(px_a[1], px_s[1], opacity);
+            *px_o.add(2) = blend_subpixel(px_a[2], px_s[2], opacity);
+        }
+        *px_o.add(3) = blend_subpixel(px_a[3], px_s[3], opacity);
     }
+}
+
+#[inline]
+fn blend_subpixel(px_a: u8, px_s: u8, opacity: f64) -> u8 {
+    (px_s as f64 * opacity + px_a as f64 * (1.0 - opacity)) as u8
 }
 
 /// Returns `(offset(...).floor(), offset(...).floor() + 1, offset(...).fract())`,
