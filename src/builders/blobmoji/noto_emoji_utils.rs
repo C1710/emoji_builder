@@ -47,7 +47,7 @@ pub fn add_glyphs(aliases: &Option<PathBuf>,
     //  seq_to_file.add( sequence: path to corresponding image)
     // Unfortunately parallel processing is not possible due to Python
     let seq_to_file = emojis.iter()
-        .filter(|(_, prepared)| prepared.is_ok())
+        .filter_map(|(emoji, prepared)| Some(emoji).zip(prepared.as_ref().ok()))
         .map(|(emoji, prepared)| (
             // First get the sequences as a list of strings instead of u32s
             emoji.sequence.iter()
@@ -56,7 +56,7 @@ pub fn add_glyphs(aliases: &Option<PathBuf>,
                 // TODO: Revisit this behavior
                 .filter(|codepoint| **codepoint != 0xfe0fu32).collect_vec(),
             // Then get the file output path
-            prepared.as_ref().unwrap().0.to_string_lossy().into_owned()
+            prepared.0.to_string_lossy().into_owned()
         ));
 
     // From https://pyo3.rs/master/python_from_rust.html
