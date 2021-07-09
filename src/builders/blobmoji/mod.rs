@@ -30,25 +30,25 @@
 use std::collections::HashMap;
 use std::fs::{copy, create_dir_all, File, remove_file, rename};
 use std::io::Write;
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
+
 use clap::{App, Arg, ArgMatches, SubCommand};
 use itertools::Itertools;
 use pyo3::Python;
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use sha2::digest::generic_array::GenericArray;
-use usvg::FitTo;
 use tiny_skia::Pixmap;
-use serde::Deserialize;
+use usvg::FitTo;
 
 use crate::builder::{EmojiBuilder, PreparationResult};
+use crate::builders::blobmoji::error::BlobmojiError;
 use crate::changes::{CheckError, FileHashes};
-use crate::emojis::emoji::Emoji;
 use crate::emoji_processor::EmojiProcessor;
 use crate::emoji_processors::reduce_colors::ReduceColors;
-use crate::builders::blobmoji::error::BlobmojiError;
-
-use crate::loadables::loadable::{LoadablePrototype};
+use crate::emojis::emoji::Emoji;
+use crate::loadables::loadable::LoadablePrototype;
 use crate::loadables::sources::fs_source::FsSource;
 
 mod waveflag;
@@ -56,6 +56,7 @@ mod waveflag;
 pub mod error;
 mod image_utils;
 mod noto_emoji_utils;
+mod rendering;
 
 #[allow(dead_code)]
 /// Represents the configuration for the `Blobmoji` builder
@@ -266,7 +267,13 @@ impl EmojiBuilder for Blobmoji {
         // Only render if sth. has changed or if it isn't available
         if (!self.hashes.check(emoji).unwrap_or(false)) || (!path.exists()) {
             // Render the SVG to an appropriate, but unpadded size
-            if let Some((rendered, (width, height))) = self.render_svg(emoji) {
+            if let Some((rendered, (width, height))) = rendering::render_svg(
+                self.default_font.clone(),
+                self.fontdb.clone(),
+                self.reduce_colors.as_ref(),
+                self.waveflag,
+                emoji
+            ) {
                 // Wave the flag if it is one and if we're supposed to.
                 let (rendered, width, height) = if self.waveflag && emoji.is_flag() {
                     waveflag::waveflag(
@@ -439,89 +446,6 @@ const RENDER_AND_CHARACTER_HEIGHT: u32 = 128;
 
 
 impl Blobmoji {
-    /// Renders a single emoji.
-    /// It will not pad the image, however it will return whether it is taller than wide
-    /// (`FitTo::Height`) or if it's wider than tall (`FitTo::Width`).
-    /// The exact value is always 128px (i.e. the target size for the largest dimension).
-    /// # Arguments
-    /// * `emoji` - the emoji to be rendered
-    /// # Returns
-    /// An `Option` containing the image as a vector of RGBA pixels and the dimensions of the
-    /// image.
-    fn render_svg(&self, emoji: &Emoji) -> Option<(Pixmap, (u32, u32))> {
-        if let Some(svg_path) = &emoji.svg_path {
-            let opt = usvg::Options {
-                // Just as a fallback. Default is "cursive",
-                // which on Windows and Mac OS it will use Comic Sans
-                // which is pretty close to Comic Neue, that is used in Blobmoji
-                font_family: self.default_font.clone(),
-                fontdb: self.fontdb.clone(),
-                ..Default::default()
-            };
-
-            let data = std::fs::read(svg_path).ok()?;
-            let tree = usvg::Tree::from_data(&data, &opt);
-
-            if let Ok(tree) = tree {
-                // Reduce the colors to a certain palette if possible
-                let tree = if let Some(reduce_colors) = &self.reduce_colors {
-                    match reduce_colors.process(emoji, tree) {
-                        Ok(tree) => tree,
-                        Err((tree, err)) => {
-                            error!("Could not reduce colors on emoji {}: {:?}", &emoji, err);
-                            tree
-                        }
-                    }
-                } else {
-                    tree
-                };
-
-                // It's easier to get the dimensions here than at some later point
-                let size = tree.svg_node().size;
-
-                let waved_height = if emoji.is_flag() && self.waveflag {
-                    size.height() * (1.0 + WAVE_FACTOR as f64)
-                } else {
-                    size.height()
-                };
-
-                let fit_to = if waved_height > size.width() {
-                    if emoji.is_flag() && self.waveflag {
-                        FitTo::Height((RENDER_AND_CHARACTER_HEIGHT as f32 / (1.0 + WAVE_FACTOR)) as u32)
-                    } else {
-                        FitTo::Height(RENDER_AND_CHARACTER_HEIGHT)
-                    }
-                } else {
-                    FitTo::Width(RENDER_WIDTH)
-                };
-
-                // Now, how large will it get?
-                // This is now done in the same way as the rendering
-                let rendered_size = fit_to.fit_to(size.to_screen_size()).unwrap();
-
-                // This is copied from the minimal example for resvg
-                let mut pixmap = tiny_skia::Pixmap::new(rendered_size.width(), rendered_size.height()).unwrap();
-
-                // This is the point where it's actually rendered
-                let img = resvg::render(&tree, fit_to, pixmap.as_mut());
-
-                if img.is_some() {
-                    Some((pixmap, rendered_size.dimensions()))
-                } else {
-                    error!("Failed to render {}", emoji);
-                    None
-                }
-            } else {
-                let err = tree.err().unwrap();
-                error!("Error in loading the SVG file for {}: {:?}", emoji, err);
-                None
-            }
-        } else {
-            error!("No file available for {}", emoji);
-            None
-        }
-    }
-
     /// Performs the quantization process which apparently does some sort of posterization to reduce
     /// the number of colors in the image.
     /// Due to licensing issues, this function (unfortunately) does nothing at all and is only
@@ -698,7 +622,6 @@ impl Blobmoji {
         remove_file(self.build_path.join(TTF)).unwrap();
     }
 }
-
 
 
 /// Gets the length of the hexadecimal representation of an integer
