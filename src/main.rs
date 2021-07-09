@@ -56,8 +56,7 @@ fn main() {
 fn build<Builder: EmojiBuilder>() {
     let args = Builder::sub_command();
     let name = args.get_name().to_string();
-    let log_modules = Builder::log_modules();
-    let mut args = parse_args(vec![args], vec![log_modules]);
+    let mut args = parse_args(vec![args]);
 
 
     let emojis = parse_emojis(&args);
@@ -210,14 +209,11 @@ struct BuilderArguments<'a> {
     offline: bool
 }
 
-fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<String>>) -> BuilderArguments<'a> {
+fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>) -> BuilderArguments<'a> {
     lazy_static! {
         static ref YAML: Yaml = load_yaml!("cli.yaml").clone();
     }
     let names: Vec<String> = builder_args.iter().map(|args| String::from(args.get_name())).collect();
-    let log_modules = builder_log_modules
-        .into_iter()
-        .flatten();
     // IntelliJ thinks this is an error, but it isn't.
     // As you can see above, &YAML really has the type &Yaml
     let mut app: App<'a, 'a> = App::from_yaml(&*YAML)

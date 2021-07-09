@@ -428,13 +428,6 @@ impl EmojiBuilder for Blobmoji {
         let reduce_color_args = ReduceColors::cli_arguments(&subcommand.p.global_args);
         subcommand.args(&reduce_color_args)
     }
-
-    fn log_modules() -> Vec<String> {
-        vec![
-            String::from("oxipng"),
-            String::from(module_path!())
-        ]
-    }
 }
 
 /// The width of the image that's _embedded_ into the font

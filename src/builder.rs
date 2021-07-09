@@ -126,13 +126,6 @@ pub trait EmojiBuilder: Send + Sync {
     ///
     /// The resulting argument match is returned in the `new` function.
     fn sub_command<'a, 'b>() -> App<'a, 'b>;
-
-    /// The names of additional modules to enable logging for.
-    /// It might be necessary to include the module itself by adding `String::from(module_path!())`
-    /// to the `Vec`
-    fn log_modules() -> Vec<String> {
-        vec![String::from(module_path!())]
-    }
 }
 
 /// An error wrapper that can additionally output IO errors
