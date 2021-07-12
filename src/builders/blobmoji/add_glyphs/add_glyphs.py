@@ -20,6 +20,7 @@ from fontTools import ttx
 from fontTools.ttLib.tables import otTables
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib.tables._c_m_a_p import CmapSubtable
+from fontTools.ttLib.tables._n_a_m_e import table__n_a_m_e
 from fontTools.ttLib import newTable
 
 import add_emoji_gsub
@@ -357,13 +358,26 @@ def add_cmap_format_4(font):
 
   font['cmap'].tables.append(newtable)
 
-def update_font_data(font, seq_to_advance, vadvance, aliases, add_cmap4, add_glyf):
+def update_font_data(font: ttx.TTFont, seq_to_advance, vadvance, aliases, add_cmap4, add_glyf):
   """Update the font's cmap, hmtx, GSUB, and GlyphOrder tables."""
   seqs = get_all_seqs(font, seq_to_advance)
   add_glyph_data(font, seqs, seq_to_advance, vadvance, add_glyf)
   add_aliases_to_cmap(font, aliases)
   add_ligature_sequences(font, seqs, aliases)
   if add_cmap4:
+    # Dirty "hack" to make it Win-compatible
+    name: table__n_a_m_e = font["name"]
+    for nameid in [1, 3, 4]:
+      name.setName("Segoe UI Emoji", nameid, 1, 0, 0)
+    for (name_id, platform_id, plat_enc_id, lang_id) in [(6, 1, 0, 0), (6, 3, 1, 0x409)]:
+      name.setName("SegoeUIEmoji", name_id, platform_id, plat_enc_id, lang_id)
+    for (name_id, platform_id, plat_enc_id, lang_id) in [(1, 3, 1, 0x409), (3, 3, 1, 0x409), (4, 3, 1, 0x409)]:
+      name.setName("Segoe UI Emoji", name_id, platform_id, plat_enc_id, lang_id)
+    existing_copyright = name.getName(7, 1, 0)
+    if not existing_copyright:
+      existing_copyright = ""
+    name.setName("{} {}".format("Segoe is a trademark of the Microsoft group of companies.", existing_copyright), 7, 1, 0, 0)
+
     add_cmap_format_4(font)
 
 def apply_aliases(seq_dict, aliases):
