@@ -322,14 +322,23 @@ impl EmojiBuilder for Blobmoji {
 
         if !self.render_only {
             // Normal
-            self.build_font(&emojis, &output_file, false);
+            self.build_font(&emojis, &output_file, false, false);
+
             // For Windows 10 support
             let mut output_file_stem_windows = output_file.file_stem().unwrap_or_default().to_os_string();
             output_file_stem_windows.push("_win");
             let output_file_windows = output_file
                 .with_file_name(output_file_stem_windows)
                 .with_extension(output_file.extension().unwrap_or_default());
-            self.build_font(&emojis, &output_file_windows, true);
+            self.build_font(&emojis, &output_file_windows, true, false);
+
+            // For Windows 10 support as default replacement
+            let mut output_file_stem_windows = output_file.file_stem().unwrap_or_default().to_os_string();
+            output_file_stem_windows.push("_win_default");
+            let output_file_windows = output_file
+                .with_file_name(output_file_stem_windows)
+                .with_extension(output_file.extension().unwrap_or_default());
+            self.build_font(&emojis, &output_file_windows, true, true);
         }
 
         Ok(())
@@ -577,7 +586,8 @@ impl Blobmoji {
     fn build_font(&self,
                   emojis: &HashMap<&Emoji, Result<<Self as EmojiBuilder>::PreparedEmoji, <Self as EmojiBuilder>::Err>>,
                   output_file: &Path,
-                  add_cmap_and_glyf: bool
+                  add_cmap_and_glyf: bool,
+                  rename_font: bool
     ) {
         // TODO: Build the font (the following steps are copied from the original Makefile
         //       (cf. https://github.com/googlefonts/noto-emoji/blob/master/Makefile)
@@ -614,7 +624,8 @@ impl Blobmoji {
             &emojis,
             self.build_path.join(TMPL_TTX_TMPL),
             self.build_path.join(TMPL_TTX),
-            add_cmap_and_glyf
+            add_cmap_and_glyf,
+            rename_font
         ) {
             Ok(_) => (),
             Err(err) => {

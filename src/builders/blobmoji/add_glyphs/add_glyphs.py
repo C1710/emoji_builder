@@ -358,13 +358,15 @@ def add_cmap_format_4(font):
 
   font['cmap'].tables.append(newtable)
 
-def update_font_data(font: ttx.TTFont, seq_to_advance, vadvance, aliases, add_cmap4, add_glyf):
+def update_font_data(font: ttx.TTFont, seq_to_advance, vadvance, aliases, add_cmap4, add_glyf, rename_font):
   """Update the font's cmap, hmtx, GSUB, and GlyphOrder tables."""
   seqs = get_all_seqs(font, seq_to_advance)
   add_glyph_data(font, seqs, seq_to_advance, vadvance, add_glyf)
   add_aliases_to_cmap(font, aliases)
   add_ligature_sequences(font, seqs, aliases)
   if add_cmap4:
+    add_cmap_format_4(font)
+  if rename_font:
     # Dirty "hack" to make it Win-compatible
     name: table__n_a_m_e = font["name"]
     for nameid in [1, 3, 4]:
@@ -377,8 +379,6 @@ def update_font_data(font: ttx.TTFont, seq_to_advance, vadvance, aliases, add_cm
     if not existing_copyright:
       existing_copyright = ""
     name.setName("{} {}".format("Segoe is a trademark of the Microsoft group of companies.", existing_copyright), 7, 1, 0, 0)
-
-    add_cmap_format_4(font)
 
 def apply_aliases(seq_dict, aliases):
   """Aliases is a mapping from sequence to replacement sequence.  We can use

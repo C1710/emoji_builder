@@ -33,13 +33,15 @@ const ADD_EMOJI_GSUB_PY: &str = include_str!("add_glyphs/add_emoji_gsub.py");
 
 pub fn add_glyphs(aliases: &Option<PathBuf>,
                   emojis: &HashMap<&Emoji, Result<
-                  <builders::blobmoji::Blobmoji as EmojiBuilder>::PreparedEmoji,
-                  <builders::blobmoji::Blobmoji as EmojiBuilder>::Err>
-              >,
+                      <builders::blobmoji::Blobmoji as EmojiBuilder>::PreparedEmoji,
+                      <builders::blobmoji::Blobmoji as EmojiBuilder>::Err>
+                  >,
                   ttx_tmpl: PathBuf,
                   ttx: PathBuf,
                   // From https://github.com/googlefonts/noto-emoji/blob/main/Makefile $(EMOJI_WINDOWS).tmpl.ttx: ...
-                  add_cmap4_and_glyf: bool) -> PyResult<()> {
+                  add_cmap4_and_glyf: bool,
+                  // TODO: Use strings here
+                  rename_font: bool) -> PyResult<()> {
     // seq_to_file: dir<codepoint sequence, file>
     //  cps = emoji.sequence (with strings instead of u32)
     //  seq = cps.filter(|cp| cp != fe0f)
@@ -140,7 +142,7 @@ pub fn add_glyphs(aliases: &Option<PathBuf>,
         lineheight
     };
 
-    add_glyphs_module.call1("update_font_data", (font, seq_to_advance, vadvance, aliases, add_cmap4_and_glyf, add_cmap4_and_glyf))?;
+    add_glyphs_module.call1("update_font_data", (font, seq_to_advance, vadvance, aliases, add_cmap4_and_glyf, add_cmap4_and_glyf, rename_font))?;
 
     font.call_method1("saveXML", (ttx.to_string_lossy().into_owned(),))?;
 
