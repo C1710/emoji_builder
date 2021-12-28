@@ -458,7 +458,7 @@ impl Blobmoji {
             };
 
             let data = std::fs::read(svg_path).ok()?;
-            let tree = usvg::Tree::from_data(&data, &opt);
+            let tree = usvg::Tree::from_data(&data, &opt.to_ref());
 
             if let Ok(tree) = tree {
                 // Reduce the colors to a certain palette if possible

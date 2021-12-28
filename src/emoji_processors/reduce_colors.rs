@@ -124,6 +124,7 @@ fn lab_to_usvg_color(lab: Lab) -> Color {
         red: (rgb.red * 255.0) as u8,
         green: (rgb.green * 255.0) as u8,
         blue: (rgb.blue * 255.0) as u8,
+        alpha: 255
     }
 }
 
