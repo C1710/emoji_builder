@@ -249,15 +249,19 @@ impl EmojiBuilder for Blobmoji {
         if (!self.hashes.check(emoji).unwrap_or(false)) || (!path.exists()) {
             // Render the SVG to an appropriate, but unpadded size
             if let Some((rendered, (width, height))) = self.render_svg(emoji) {
+                let data: Vec<u8> = rendered.pixels().iter()
+                    .map(|pixel| pixel.demultiply())
+                    .flat_map(|pixel| [pixel.red(), pixel.green(), pixel.blue(), pixel.alpha()])
+                    .collect();
                 // Wave the flag if it is one and if we're supposed to.
                 let (rendered, width, height) = if self.waveflag && emoji.is_flag() {
                     waveflag::waveflag(
-                        rendered.data(),
+                        &data,
                         width as usize,
                         height,
                         (height as f32 * WAVE_FACTOR) as usize)
                 } else {
-                    (rendered.data().to_vec(), width, height)
+                    (data, width, height)
                 };
                 // The rendering already accounted for the case that this is a flag and that the
                 // image will get taller.
