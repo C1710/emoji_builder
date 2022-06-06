@@ -219,7 +219,7 @@ dependencies = [
  "textwrap",
  "unicode-width",
  "vec_map",
- "yaml-rust",
+ "yaml-rust 0.3.5",
 ]
 
 [[package]]
@@ -451,7 +451,7 @@ dependencies = [
  "tempfile",
  "tiny-skia",
  "usvg",
- "yaml-rust",
+ "yaml-rust 0.4.1",
 ]
 
 [[package]]
@@ -1026,6 +1026,12 @@ checksum = "a4810980d791f26d470e2d7d91a3d4d22aa3a4b709fb7e9c5e43ee54f83a01f2"
 dependencies = [
  "libdeflate-sys",
 ]
+
+[[package]]
+name = "linked-hash-map"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fb9b38af92608140b86b693604b9ffcc5824240a484d1ecd4795bacb2fe88f3"
 
 [[package]]
 name = "lock_api"
@@ -2701,6 +2707,15 @@ name = "yaml-rust"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e66366e18dc58b46801afbf2ca7661a9f59cc8c5962c29892b6039b4f86fa992"
+
+[[package]]
+name = "yaml-rust"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe0fad48adbecafa9588846b38af3f015ccaef0a79d92f9b2892dd310aa9f9e1"
+dependencies = [
+ "linked-hash-map",
+]
 
 [[package]]
 name = "zopfli"
