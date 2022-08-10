@@ -106,7 +106,7 @@ fn parse_emojis(args: &BuilderArguments) -> Vec<Emoji> {
     };
 
     let table = if let Some(emoji_test) = args.emoji_test.as_ref() {
-        let reader = std::fs::File::open(emoji_test).map(BufReader::new);
+        let reader = fs::File::open(emoji_test).map(BufReader::new);
         if let Ok(reader) = reader {
             let mut table = table.unwrap_or_default();
             table.expand_descriptions_from_test_data(reader)
@@ -269,7 +269,7 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
                         create_dir_all(parent).unwrap_or_else(|err| error!("{:?}", err));
                     }
                     if !path.exists() {
-                        match std::fs::File::create(path) {
+                        match fs::File::create(path) {
                             Ok(mut file) => file.write_all(content).unwrap_or_else(|err| error!("{:?}", err)),
                             Err(err) => error!("{:?}", err)
                         }
@@ -343,8 +343,8 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
 
 
 fn recurse_included_dir<'a>(dir: &'a include_dir::Dir) -> Vec<&'a include_dir::File<'a>> {
-    dir.files().iter()
-        .chain(dir.dirs().iter()
+    dir.files()
+        .chain(dir.dirs()
             .flat_map(recurse_included_dir)
         )
         .collect()
