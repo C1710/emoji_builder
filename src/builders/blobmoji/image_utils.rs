@@ -17,7 +17,7 @@
 
 
 use png::EncodingError;
-use png::ColorType::RGBA;
+use png::ColorType::Rgba;
 use png::BitDepth::Eight;
 use crate::builders::blobmoji::{CHARACTER_WIDTH, RENDER_AND_CHARACTER_HEIGHT, Blobmoji, PNG_DIR};
 use oxipng::{PngResult, optimize_from_memory};
@@ -31,12 +31,12 @@ pub fn pixels_to_png(img: &[u8]) -> Result<Vec<u8>, EncodingError> {
     // According to this post, PNG files have a header of 8 bytes: https://stackoverflow.com/questions/10423942/what-is-the-header-size-of-png-jpg-jpeg-bmp-gif-and-other-common-graphics-for
     let mut png_target = Vec::with_capacity(img.len() + 8);
     let mut encoder = png::Encoder::new(&mut png_target, CHARACTER_WIDTH, RENDER_AND_CHARACTER_HEIGHT);
-    encoder.set_color(RGBA);
+    encoder.set_color(Rgba);
     encoder.set_depth(Eight);
     let mut writer = encoder.write_header()?;
     writer.write_image_data(img)?;
     // writer still borrows png_target. Fortunately we don't need it anymore
-    std::mem::drop(writer);
+    drop(writer);
     Ok(png_target)
 }
 
