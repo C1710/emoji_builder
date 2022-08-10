@@ -38,7 +38,7 @@ use pyo3::Python;
 use sha2::{Digest, Sha256};
 use sha2::digest::generic_array::GenericArray;
 use usvg::FitTo;
-use tiny_skia::Pixmap;
+use tiny_skia::{Pixmap, Transform};
 
 use crate::builder::{EmojiBuilder, PreparationResult};
 use crate::changes::{CheckError, FileHashes};
@@ -278,7 +278,7 @@ impl EmojiBuilder for Blobmoji {
                 // Oxipng needs to work on PNGs and not raw pixels, so it's encoded here.
                 // It also makes sense to do quantization at this step, if it is performed at all
                 // (which is only the case for the GPL-version which is currently not public)
-                let encoded = match self.quantize_to_png(&emoji, &mut image) {
+                let encoded = match self.quantize_to_png(emoji, &mut image) {
                     Some(quantized) => quantized,
                     None => image_utils::pixels_to_png(&image).unwrap()
                 };
@@ -505,7 +505,7 @@ impl Blobmoji {
                 let mut pixmap = tiny_skia::Pixmap::new(rendered_size.width(), rendered_size.height()).unwrap();
 
                 // This is the point where it's actually rendered
-                let img = resvg::render(&tree, fit_to, pixmap.as_mut());
+                let img = resvg::render(&tree, fit_to, Transform::default(), pixmap.as_mut());
 
                 if img.is_some() {
                     Some((pixmap, rendered_size.dimensions()))
@@ -625,7 +625,7 @@ impl Blobmoji {
         info!("Adding glyphs");
         match noto_emoji_utils::add_glyphs(
             &self.aliases,
-            &emojis,
+            emojis,
             self.build_path.join(TMPL_TTX_TMPL),
             self.build_path.join(TMPL_TTX),
             add_cmap_and_glyf,

@@ -345,8 +345,7 @@ fn parse_args<'a>(builder_args: Vec<App<'a, 'a>>, builder_log_modules: Vec<Vec<S
 fn recurse_included_dir<'a>(dir: &'a include_dir::Dir) -> Vec<&'a include_dir::File<'a>> {
     dir.files().iter()
         .chain(dir.dirs().iter()
-            .map(|dir| recurse_included_dir(dir))
-            .flatten()
+            .flat_map(recurse_included_dir)
         )
         .collect()
 }

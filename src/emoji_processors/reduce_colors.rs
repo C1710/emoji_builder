@@ -123,8 +123,7 @@ fn lab_to_usvg_color(lab: Lab) -> Color {
     Color {
         red: (rgb.red * 255.0) as u8,
         green: (rgb.green * 255.0) as u8,
-        blue: (rgb.blue * 255.0) as u8,
-        alpha: 255
+        blue: (rgb.blue * 255.0) as u8
     }
 }
 
@@ -174,7 +173,7 @@ impl From<gimp_palette::Palette> for ReduceColors {
     fn from(palette: Palette) -> Self {
         palette.get_colors()
             .iter()
-            .map(|color| to_lab_gimp(&color))
+            .map(to_lab_gimp)
             .collect_vec()
             .into()
     }

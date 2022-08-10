@@ -36,6 +36,7 @@ use crate::emoji::Emoji;
 use crate::changes;
 
 /// A simple struct that maps code sequences to file hashes
+#[derive(Default)]
 pub struct FileHashes(HashMap<Vec<u32>, Vec<u8>>);
 
 #[derive(Debug)]
@@ -195,12 +196,6 @@ impl FileHashes {
     /// Create a new, empty changelist
     pub fn new() -> FileHashes {
         Self::default()
-    }
-}
-
-impl Default for FileHashes {
-    fn default() -> Self {
-        FileHashes(HashMap::new())
     }
 }
 

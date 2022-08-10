@@ -117,7 +117,7 @@ impl Emoji {
         lazy_static! {
             static ref HEX_SEQUENCE: Regex = Regex::new(r"([a-fA-F0-9]{1,8})([-_. ]|$)").unwrap();
         }
-        let matches: CaptureMatches = HEX_SEQUENCE.captures_iter(&sequence);
+        let matches: CaptureMatches = HEX_SEQUENCE.captures_iter(sequence);
         let code_sequences: Vec<u32> = matches
             .map(|sequence| sequence[1].to_string())
             .map(|sequence| u32::from_str_radix(&sequence, 16).unwrap_or(0))
@@ -664,7 +664,7 @@ impl AsRef<Vec<u32>> for Emoji {
 
 impl AsRef<[u32]> for Emoji {
     fn as_ref(&self) -> &[u32] {
-        &self.sequence.as_ref()
+        self.sequence.as_ref()
     }
 }
 
@@ -814,7 +814,7 @@ impl ToString for EmojiKind {
             EmojiKeycapSequence => {"Emoji_Keycap_Sequence".to_string()}
             EmojiFlagSequence => {"Emoji_Flag_Sequence".to_string()}
             EmojiKind::EmojiModifierSequence => {"Emoji_Modifier_Sequence".to_string()}
-            EmojiKind::Other(name) => {name.replace(" ", "_")}
+            EmojiKind::Other(name) => {name.replace(' ', "_")}
         }
     }
 }

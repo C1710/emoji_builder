@@ -58,7 +58,7 @@ pub fn optimize_png(img: &[u8]) -> PngResult<Vec<u8>> {
 
 /// Saves the already encoded PNG file
 pub fn write_png(build_path: &Path, emoji: &Emoji, image: Vec<u8>) -> std::io::Result<()> {
-    let filename = Blobmoji::generate_filename(&emoji);
+    let filename = Blobmoji::generate_filename(emoji);
     let path = build_path
         .join(PNG_DIR)
         .join(&PathBuf::from(filename));

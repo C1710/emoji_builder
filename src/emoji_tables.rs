@@ -410,8 +410,8 @@ impl EmojiTable {
                     self.update_emoji(codepoints.clone(), None, Some(name));
 
                     // Don't insert unqualified codepoints unless we don't have a mapping for this name anyway
-                    if status != "unqualified" || self.get_by_name(&name).is_none() {
-                        self.insert_lookup_name(&name, codepoints.clone());
+                    if status != "unqualified" || self.get_by_name(name).is_none() {
+                        self.insert_lookup_name(name, codepoints.clone());
                     }
                 } else {
                     warn!("Malformed line in emoji-test.txt: {}", line);
@@ -552,7 +552,7 @@ impl EmojiTable {
         };
         let missing = table_emojis
             .difference(emojis)
-            .filter_map(|emoji| Emoji::from_u32_sequence(emoji.clone(), Some(&self)).ok()).collect_vec();
+            .filter_map(|emoji| Emoji::from_u32_sequence(emoji.clone(), Some(self)).ok()).collect_vec();
         let emojis = if ignore_fe0f {
             // FIXME: We don't actually want to clone here
             emojis.clone()
