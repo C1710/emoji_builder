@@ -16,7 +16,7 @@ resvg = "0.22.0"
 usvg = "0.22.0"
 tiny-skia = "0.6.1"
 # It looks like parallel processing inside parallel processing doesn't work
-oxipng = {version = "3.0.0", default-features = false}
+oxipng = {version = "5.0.1", default-features = false}
 regex = "1.1.6"
 hex = "0.3"
 lazy_static = "1.3.0"
