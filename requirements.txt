@@ -1,2 +1,2 @@
 fonttools ~= 4.12.1
-notofonttools ~= 0.2.11
+notofonttools == 0.2.11
