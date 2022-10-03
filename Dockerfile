@@ -16,11 +16,11 @@ RUN python3 -m pip install -r requirements.txt
 
 COPY . /emoji_builder
 
-RUN chmod +x /emoji_builder/github_workflow_setup.sh && \
-    /emoji_builder/github_workflow_setup.sh && \
-    cargo install --path .
+RUN chmod a+x /emoji_builder/github_workflow_setup.sh
+RUN /emoji_builder/github_workflow_setup.sh
+RUN cargo install --path .
 
-FROM python:3.7-slim
+FROM python:3.8-slim
 
 VOLUME /emoji
 
