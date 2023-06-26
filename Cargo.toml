@@ -30,7 +30,7 @@ clap = {version = "2.33", features = ["yaml"]}
 png = "0.16.5"
 tempfile = "3.0.8"
 digest = "0.8.0"
-yaml-rust = "0.3.5"
+yaml-rust = "0.4.1"
 rctree = "0.3"
 bytecount = "0.6.0"
 pyo3 = {version = "0.13.2", features = ["auto-initialize"] }
